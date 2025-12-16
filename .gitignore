@@ -1,3 +1,11 @@
+# Mac stuff
+.DS_Store
+
+# database, images, and leaflet
+data/
+uploads/
+static/leaflet/*
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
