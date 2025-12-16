@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin · Artifacts</title>
+<style>
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;padding:0;background:#f5f5f5;}
+  .banner{height:60px;background:#004c6d;color:#fff;display:flex;align-items:center;padding:0 1rem;font-size:1.05rem;}
+  .page{max-width:1200px;margin:0 auto;padding:.5rem .75rem;}
+  table{width:100%;border-collapse:collapse;background:#fff;}
+  th,td{border-bottom:1px solid #eee;padding:.4rem;text-align:left;vertical-align:top;font-size:.9rem;}
+  img.thumb{max-height:60px;border-radius:4px;}
+  .bar{display:flex;gap:.5rem;margin-bottom:.5rem;flex-wrap:wrap;}
+  input[type="search"]{flex:1;padding:.4rem .5rem;font-size:.9rem;}
+  a.btn,button.btn{padding:.3rem .6rem;border:1px solid #ddd;border-radius:999px;text-decoration:none;color:inherit;background:#fafafa;font-size:.8rem;white-space:nowrap;}
+  form.inline{display:inline;}
+  .small{font-size:.8rem;color:#555;}
+</style>
+<body>
+<div class="banner">Artifact Capture · Admin</div>
+<div class="page">
+  <div class="bar">
+    <form method="get" style="display:flex;gap:.5rem;flex:1 1 auto;">
+      <input type="search" name="q" placeholder="Search text fields" value="{{ q or '' }}">
+      <a class="btn" href="/admin/export.csv">CSV</a>
+      <a class="btn" href="/admin/export.geojson">GeoJSON</a>
+      <a class="btn" href="/admin/map">Map</a>
+      <a class="btn" href="/">Form</a>
+    </form>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th><th>Img</th><th>Metadata</th><th>GPS</th><th>Files</th><th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td>{{ r["id"] }}</td>
+        <td>
+          {% if r["thumb_filename"] %}
+            <img class="thumb" src="{{ '/uploads/' + r['thumb_filename'] | urlencode }}" alt="">
+          {% elif r["filename"] %}
+            <img class="thumb" src="{{ '/uploads/' + r['filename'] | urlencode }}" alt="">
+          {% endif %}
+        </td>
+        <td class="small">
+          {% if r["date_recorded"] %}
+            <strong>Date recorded:</strong> {{ r["date_recorded"] }}<br>
+          {% endif %}
+          {% for f in input_fields %}
+            {% set label = f[0] %}
+            {% set col   = f[1] %}
+            {% if col != 'date_recorded' and r[col] %}
+              <strong>{{ label }}:</strong> {{ r[col] }}<br>
+            {% endif %}
+          {% endfor %}
+          <span>{{ r["exif_datetime"] or "" }} {{ r["exif_make"] or "" }} {{ r["exif_model"] or "" }}</span>
+        </td>
+        <td class="small">
+          {% if r["gps_lat"] and r["gps_lon"] %}
+            {{ "%.6f"|format(r["gps_lat"]) }}, {{ "%.6f"|format(r["gps_lon"]) }}<br>
+            {% set osm, gmaps = maps_links(r["gps_lat"], r["gps_lon"]) %}
+            <a class="btn" href="{{ osm }}" target="_blank">OSM</a>
+            <a class="btn" href="{{ gmaps }}" target="_blank">Maps</a>
+          {% else %}
+            —
+          {% endif %}
+        </td>
+        <td class="small">
+          {% if r["filename"] %}
+            <a class="btn" href="{{ '/uploads/' + r['filename'] | urlencode }}" target="_blank">JPEG</a>
+          {% endif %}
+          {% if r["webp_filename"] %}
+            <a class="btn" href="{{ '/uploads/' + r['webp_filename'] | urlencode }}" target="_blank">WebP</a>
+          {% endif %}
+          {% if r["json_filename"] %}
+            <a class="btn" href="{{ '/uploads/' + r['json_filename'] | urlencode }}" target="_blank">JSON</a>
+          {% endif %}
+        </td>
+        <td class="small">
+          <a class="btn" href="/admin/edit/{{ r['id'] }}">Edit</a>
+          <form class="inline" action="/admin/delete/{{ r['id'] }}" method="post"
+                onsubmit="return confirm('Delete artifact {{ r['id'] }}?')">
+            <button class="btn" type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+</body>
+</html>

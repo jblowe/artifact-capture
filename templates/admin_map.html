@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Artifact Map</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;padding:0;background:#f5f5f5;}
+    .banner{height:60px;background:#004c6d;color:#fff;display:flex;align-items:center;padding:0 1rem;font-size:1.05rem;}
+    #topbar{padding:.5rem .75rem;display:flex;gap:.5rem;align-items:center;font-size:.9rem;max-width:1200px;margin:0 auto;}
+    #mapStatus{display:none;padding:0.4rem 0.75rem;font-size:0.85rem;background:#fff3cd;border-bottom:1px solid #ffeeba;color:#856404;max-width:1200px;margin:0 auto;}
+    #map{width:100%;height:calc(100vh - 110px);background:#e0e0e0;}
+    a.btn{padding:.3rem .6rem;border:1px solid #ddd;border-radius:999px;text-decoration:none;color:inherit;background:#fafafa;font-size:.85rem;white-space:nowrap;}
+  </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='leaflet/leaflet.css') }}">
+  <script src="{{ url_for('static', filename='leaflet/leaflet.js') }}"></script>
+</head>
+<body>
+  <div class="banner">Artifact Capture · Map</div>
+  <div id="topbar">
+    <a class="btn" href="/admin">← Admin list</a>
+    <a class="btn" href="/">Form</a>
+    <span>Artifact map (GPS-enabled records)</span>
+  </div>
+
+  <div id="mapStatus">
+    Basemap or map library could not be loaded. You may be offline or Leaflet may be missing.
+  </div>
+
+  <div id="map"></div>
+
+  <script>
+    (function() {
+      const statusEl = document.getElementById('mapStatus');
+
+      function showStatus(msg) {
+        if (statusEl) {
+          statusEl.textContent = msg;
+          statusEl.style.display = 'block';
+        }
+      }
+
+      if (typeof L === 'undefined') {
+        showStatus('Map library (Leaflet) is not available. Install leaflet.js/leaflet.css into static/leaflet or go online.');
+        return;
+      }
+
+      const map = L.map('map').setView([20, 0], 2);
+
+      let tileErrorShown = false;
+      const tiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors'
+      });
+
+      tiles.on('tileerror', function () {
+        if (!tileErrorShown) {
+          tileErrorShown = true;
+          showStatus('Basemap tiles could not be loaded. You may be offline. GPS points will still display over a plain background if available.');
+        }
+      });
+
+      tiles.addTo(map);
+
+      const markers = L.layerGroup().addTo(map);
+
+      fetch('/admin/export.geojson')
+        .then(r => r.json())
+        .then(data => {
+          if (!data.features || !data.features.length) {
+            alert("No GPS-enabled artifacts yet.");
+            return;
+          }
+
+          const bounds = [];
+
+          data.features.forEach(f => {
+            if (!f.geometry || f.geometry.type !== 'Point') return;
+            const coords = f.geometry.coordinates;
+            const lon = coords[0];
+            const lat = coords[1];
+
+            const p = f.properties || {};
+            const marker = L.marker([lat, lon]).addTo(markers);
+
+            const imgUrl = p.thumb_filename
+              ? "/uploads/" + encodeURIComponent(p.thumb_filename)
+              : (p.webp_filename
+                 ? "/uploads/" + encodeURIComponent(p.webp_filename)
+                 : "/uploads/" + encodeURIComponent(p.filename));
+
+            const html =
+              "<strong>" + (p.excavation_unit || "") + " " + (p.tnumber || "") + "</strong><br>" +
+              "Lot " + (p.lot || "") + " · Area " + (p.area || "") + " · Level " + (p.level || "") + "<br>" +
+              (p.notes ? ("<em>" + p.notes + "</em><br>") : "") +
+              "<small>" + (p.camera || "") + " · " + (p.exif_datetime || "") + "</small><br>" +
+              "<a href=\"" + imgUrl + "\" target=\"_blank\">Open image</a>" +
+              (p.json_filename
+                ? "<br><a href=\"/uploads/" + encodeURIComponent(p.json_filename) + "\" target=\"_blank\">JSON</a>"
+                : "");
+
+            marker.bindPopup(html);
+            bounds.push([lat, lon]);
+          });
+
+          if (bounds.length) {
+            map.fitBounds(bounds, { padding: [20, 20] });
+          }
+        })
+        .catch(err => {
+          console.error(err);
+          showStatus('Failed to load GeoJSON points from server.');
+        });
+    })();
+  </script>
+</body>
+</html>

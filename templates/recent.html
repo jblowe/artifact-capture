@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Recent uploads</title>
+<style>
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;padding:0;background:#f5f5f5;}
+  .banner{height:60px;background:#004c6d;color:#fff;display:flex;align-items:center;padding:0 1rem;font-size:1.05rem;}
+  .page{max-width:1100px;margin:0 auto;padding:.5rem .75rem;}
+  table{width:100%;border-collapse:collapse;background:#fff;}
+  th,td{border-bottom:1px solid #eee;padding:.4rem;text-align:left;vertical-align:top;font-size:.9rem;}
+  img.thumb{max-height:80px;border-radius:6px;}
+  .small{font-size:.8rem;color:#555;}
+  a.btn{padding:.25rem .5rem;border:1px solid #ddd;border-radius:999px;text-decoration:none;color:inherit;font-size:.8rem;white-space:nowrap;margin-right:.2rem;background:#fafafa;}
+</style>
+<body>
+<div class="banner">Artifact Capture · Recent uploads</div>
+<div class="page">
+  <a class="btn" href="/">← Form</a>
+  <h3>Recent uploads</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th><th>Image</th><th>Key fields</th><th>GPS</th><th>Files</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td>{{ r["id"] }}</td>
+        <td>
+          {% if r["thumb_filename"] %}
+            <img class="thumb" src="{{ '/uploads/' + r['thumb_filename'] | urlencode }}" alt="">
+          {% elif r["filename"] %}
+            <img class="thumb" src="{{ '/uploads/' + r['filename'] | urlencode }}" alt="">
+          {% endif %}
+        </td>
+        <td class="small">
+          {% if r["date_recorded"] %}
+            <strong>Date recorded:</strong> {{ r["date_recorded"] }}<br>
+          {% endif %}
+          {% for f in input_fields %}
+            {% set label = f[0] %}
+            {% set col   = f[1] %}
+            {% if col in ["recorders","excavation_unit","tnumber","lot","area","level","notes"] and r[col] %}
+              <strong>{{ label }}:</strong> {{ r[col] }}<br>
+            {% endif %}
+          {% endfor %}
+        </td>
+        <td class="small">
+          {% if r["gps_lat"] and r["gps_lon"] %}
+            {{ "%.6f"|format(r["gps_lat"]) }}, {{ "%.6f"|format(r["gps_lon"]) }}<br>
+            {% set osm, gmaps = maps_links(r["gps_lat"], r["gps_lon"]) %}
+            <a class="btn" href="{{ osm }}" target="_blank">OSM</a>
+            <a class="btn" href="{{ gmaps }}" target="_blank">Maps</a>
+          {% else %}
+            —
+          {% endif %}
+        </td>
+        <td class="small">
+          {% if r["filename"] %}
+            <a class="btn" href="{{ '/uploads/' + r['filename'] | urlencode }}" target="_blank">JPEG</a>
+          {% endif %}
+          {% if r["webp_filename"] %}
+            <a class="btn" href="{{ '/uploads/' + r['webp_filename'] | urlencode }}" target="_blank">WebP</a>
+          {% endif %}
+          {% if r["json_filename"] %}
+            <a class="btn" href="{{ '/uploads/' + r['json_filename'] | urlencode }}" target="_blank">JSON</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+</body>
+</html>
