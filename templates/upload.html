@@ -1,102 +1,74 @@
 <!doctype html>
 <html lang="en">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Artifact Capture</title>
+<title>TAP Capture</title>
+
 <style>
-  body{
-    font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
-    margin:0;padding:0;background:#f5f5f5;
-  }
-  .banner{
-    height:60px;background:#004c6d;color:#fff;
-    display:flex;align-items:center;
-    padding:0 1rem;font-size:1.05rem;
-  }
-  .page{
-    max-width:960px;margin:0 auto;
-    padding:0.5rem 0.75rem;
-  }
-  .card{
-    border:1px solid #ddd;border-radius:10px;
-    padding:.6rem .75rem;margin:.5rem 0;background:#fff;
-  }
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;padding:0;background:#f5f5f5;}
+  .banner{height:60px;background:#004c6d;color:#fff;display:flex;align-items:center;padding:0 1rem;font-size:1.05rem;}
+  .page{max-width:980px;margin:0 auto;padding:0.5rem 0.75rem;}
+  .card{border:1px solid #ddd;border-radius:10px;padding:.6rem .75rem;margin:.5rem 0;background:#fff;}
   .small{font-size:.85rem;color:#555;}
-  img.thumb{
-    max-width:100%;max-height:160px;
-    border-radius:8px;display:block;margin-top:.4rem;
-  }
-  form{margin:0;}
+  .tabs{display:flex;gap:.35rem;flex-wrap:wrap;margin:.25rem 0 .6rem 0;}
+  .tab{padding:.25rem .6rem;border:1px solid #ddd;border-radius:999px;background:#fafafa;text-decoration:none;color:inherit;font-size:.85rem;}
+  .tab.active{background:#004c6d;color:#fff;border-color:#004c6d;}
 
-  table.form-table{
-    width:100%;
-    border-collapse:collapse;
-  }
-  .form-table td{
-    padding:.15rem .25rem;
-    vertical-align:middle;
-    font-size:.9rem;
-  }
-  .form-label{
-    white-space:nowrap;
-    font-size:.85rem;
-    color:#333;
-    text-align:right;
-    width:1%;
-  }
-  .form-input input,
-  .form-input select,
-  .form-input textarea{
-    width:100%;
-    box-sizing:border-box;
-    padding:.32rem .45rem;
-    font-size:.9rem;
-  }
+  table.form-table{width:100%;border-collapse:collapse;}
+  .form-table td{padding:.15rem .25rem;vertical-align:middle;font-size:.9rem;}
+  .form-label{white-space:nowrap;font-size:.85rem;color:#333;text-align:right;width:1%;}
+  .form-input input,.form-input select,.form-input textarea{width:100%;box-sizing:border-box;padding:.32rem .45rem;font-size:.9rem;}
   textarea{min-height:2.5rem;}
-
-  .flex{display:flex;align-items:center;gap:.4rem;}
-  .actions{
-    display:flex;gap:.5rem;margin-top:.5rem;flex-wrap:wrap;
-  }
-  a.btn,button{
-    padding:.35rem .7rem;border-radius:999px;
-    border:1px solid #ddd;background:#fafafa;
-    font-size:.85rem;text-decoration:none;color:inherit;
-    cursor:pointer;
-  }
+  .actions{display:flex;gap:.5rem;margin-top:.5rem;flex-wrap:wrap;}
+  a.btn,button{padding:.35rem .7rem;border-radius:999px;border:1px solid #ddd;background:#fafafa;font-size:.85rem;text-decoration:none;color:inherit;cursor:pointer;}
   a.btn{display:inline-block;}
+  img.thumb{max-width:100%;max-height:160px;border-radius:8px;display:block;margin-top:.4rem;}
+
+  .required-mark{color:#c00;margin-left:2px;}
   #gps_status{font-size:.8rem;color:#555;margin-top:.25rem;}
 
   .card-last{position:relative;}
-  .card-close{
-    position:absolute;top:6px;right:8px;
-    border:none;background:transparent;
-    font-size:1.1rem;line-height:1;
-    cursor:pointer;color:#999;
-  }
+  .card-close{position:absolute;top:6px;right:8px;border:none;background:transparent;font-size:1.1rem;line-height:1;cursor:pointer;color:#999;}
   .card-close:hover{color:#000;}
-  .card-last-header{margin-bottom:.4rem;}
-  .card-last-inner{
-    display:flex;gap:.75rem;flex-wrap:wrap;
-  }
-  .card-last-col{
-    flex:1 1 0;min-width:260px;
-  }
-  .required-mark{
-    color:#c00;
-    margin-left:2px;
-  }
+  .card-last-inner{display:flex;gap:.75rem;flex-wrap:wrap;}
+  .card-last-col{flex:1 1 0;min-width:260px;}
+/* --- Tab styling (make selector look like tabs, not buttons) --- */
+.tabs {
+  display: flex;
+  gap: 0;
+  margin: .25rem 0 .6rem 0;
+  border-bottom: 1px solid #ccc;
+  flex-wrap: wrap;
+}
+.tabs .tab {
+  display: inline-block;
+  padding: .35rem .9rem;
+  border: 1px solid #ccc;
+  border-bottom: none;
+  background: #eee;
+  cursor: pointer;
+  font-size: .85rem;
+  border-radius: .4rem .4rem 0 0;
+  margin-bottom: -1px;
+  text-decoration: none;
+  color: inherit;
+}
+.tabs .tab + .tab { margin-left: .25rem; }
+.tabs .tab.active {
+  background: #fff;
+  font-weight: 600;
+}
 </style>
-<body>
 
-<div class="banner">Artifact Capture</div>
+<body>
+<div class="banner">TAP Capture</div>
 <div class="page">
 
-{% if last_row %}
+{% if last_row and last_type and last_meta %}
   <div class="card card-last" id="lastCard">
     <button type="button" class="card-close" onclick="hideLastCard()">×</button>
 
-    <div class="card-last-header">
-      <strong>Saved artifact ID {{ last_row["id"] }}</strong>
+    <div>
+      <strong>Saved {{ last_meta.label }} ID {{ last_row["id"] }}</strong>
       {% if last_row["date_recorded"] %}
         <div class="small">Date recorded: {{ last_row["date_recorded"] }}</div>
       {% endif %}
@@ -114,26 +86,29 @@
 
     <div class="card-last-inner">
       <div class="card-last-col">
-        {% if last_row["thumb_filename"] %}
-          <img class="thumb" src="{{ '/uploads/' + last_row['thumb_filename'] | urlencode }}" alt="thumbnail">
-        {% elif last_row["filename"] %}
-          <img class="thumb" src="{{ '/uploads/' + last_row['filename'] | urlencode }}" alt="image">
+        {% set thumbs = (last_row["thumbs_json"]|fromjson) %}
+        {% set images = (last_row["images_json"]|fromjson) %}
+        {% if thumbs and thumbs[0] %}
+          <img class="thumb" src="{{ url_for('serve_upload', fname=thumbs[0]) }}" alt="thumbnail">
+        {% elif images and images[0] %}
+          <img class="thumb" src="{{ url_for('serve_upload', fname=images[0]) }}" alt="image">
+        {% endif %}
+        {% if images %}
+          <div class="small">Images attached: {{ images|length }}</div>
         {% endif %}
       </div>
 
       <div class="card-last-col small">
-        {% for f in input_fields %}
+        {% for f in last_meta.display_fields %}
           {% set label = f[0] %}
-          {% set col   = f[1] %}
-          {% if col != 'date_recorded' and last_row[col] %}
+          {% set col   = f[1] %}          {% if last_row[col] %}
             <strong>{{ label }}:</strong> {{ last_row[col] }}<br>
           {% endif %}
         {% endfor %}
-        {% if last_row["json_filename"] %}
+        {% set jfiles = (last_row["json_files_json"]|fromjson) %}
+        {% if jfiles %}
           <strong>JSON:</strong>
-          <a href="{{ '/uploads/' + last_row['json_filename'] | urlencode }}" target="_blank">
-            {{ last_row["json_filename"] }}
-          </a>
+          <a href="{{ url_for('serve_upload', fname=jfiles[-1]) }}" target="_blank">{{ jfiles[-1] }}</a>
         {% endif %}
       </div>
     </div>
@@ -146,190 +121,181 @@
   {% endif %}
 {% endwith %}
 
-<form id="captureForm" class="card" action="/submit" method="post" enctype="multipart/form-data" autocomplete="on">
+<div class="card">
+  <div class="tabs">
+    {% for key, meta in OBJECT_TYPES.items() %}
+      <a class="tab {% if key == selected_type %}active{% endif %}" href="{{ url_for('form', type=key) }}">{{ meta.label }}</a>
+    {% endfor %}
+  </div>
 
-  <table class="form-table">
-    {% for row in layout_rows %}
-      <tr>
-        {% for col in row %}
-          {% if col in field_meta %}
-            {% set meta = field_meta[col] %}
-            {% set label = meta.label %}
-            {% set sql_type = meta.sql_type.upper() %}
-            {% set widget = meta.widget %}
-            {% set options = meta.options %}
-            {% set is_required = meta.required %}
-            {% if not sql_type.startswith('TIMESTAMP') %}
-              <td class="form-label">
-                <label for="{{ col }}">
-                  {{ label }}
-                  {% if is_required %}<span class="required-mark">*</span>{% endif %}
-                </label>
-              </td>
-              <td class="form-input">
-                {% if widget == 'dropdown' and options %}
-                  <select id="{{ col }}" name="{{ col }}"{% if is_required %} required{% endif %}>
-                    <option value=""></option>
-                    {% for opt in options %}
-                      <option value="{{ opt }}">{{ opt }}</option>
-                    {% endfor %}
-                  </select>
-                {% elif col == 'notes' %}
-                  <textarea id="{{ col }}" name="{{ col }}"{% if is_required %} required{% endif %}></textarea>
-                {% else %}
-                  {% if 'DATE' in sql_type and 'TIME' not in sql_type %}
-                    <input id="{{ col }}" name="{{ col }}" type="date"{% if is_required %} required{% endif %}>
-                  {% elif 'TIME' in sql_type %}
-                    <input id="{{ col }}" name="{{ col }}" type="datetime-local"{% if is_required %} required{% endif %}>
-                  {% elif sql_type.startswith('INT') or sql_type.startswith('FLOAT') or sql_type.startswith('REAL') %}
-                    <input id="{{ col }}" name="{{ col }}" type="number" step="any"{% if is_required %} required{% endif %}>
-                  {% else %}
-                    <input id="{{ col }}" name="{{ col }}" type="text"{% if is_required %} required{% endif %}>
+  {% for key, meta in OBJECT_TYPES.items() %}
+    <div class="type-panel" data-type="{{ key }}" style="{% if key != selected_type %}display:none{% endif %}">
+      <form class="captureForm" action="/submit" method="post" enctype="multipart/form-data" autocomplete="on">
+        <input type="hidden" name="object_type" value="{{ key }}">
+
+        <table class="form-table">
+          {% for row in meta.layout_rows %}
+            <tr>
+              {% for col in row %}
+                {% if col in meta.field_meta %}
+                  {% set fm = meta.field_meta[col] %}
+                  {% set label = fm.label %}
+                  {% set sql_type = (fm.sql_type or 'TEXT')|upper %}
+                  {% set widget = fm.widget %}
+                  {% set options = fm.options %}
+                  {% set is_required = fm.required %}
+                  {% if not sql_type.startswith('TIMESTAMP') %}
+                    <td class="form-label">
+                      <label for="{{ key }}__{{ col }}">{{ label }}{% if is_required %}<span class="required-mark">*</span>{% endif %}</label>
+                    </td>
+                    <td class="form-input">
+                      {% if widget == 'dropdown' and options %}
+                        <select id="{{ key }}__{{ col }}" name="{{ col }}"{% if is_required %} required{% endif %}>
+                          <option value=""></option>
+                          {% for opt in options %}
+                            <option value="{{ opt }}">{{ opt }}</option>
+                          {% endfor %}
+                        </select>
+                      {% elif col == 'notes' or col == 'description' %}
+                        <textarea id="{{ key }}__{{ col }}" name="{{ col }}"{% if is_required %} required{% endif %}></textarea>
+                      {% else %}
+                        {% if 'DATE' in sql_type and 'TIME' not in sql_type %}
+                          <input id="{{ key }}__{{ col }}" name="{{ col }}" type="date"{% if is_required %} required{% endif %}>
+                        {% elif 'TIME' in sql_type %}
+                          <input id="{{ key }}__{{ col }}" name="{{ col }}" type="datetime-local"{% if is_required %} required{% endif %}>
+                        {% elif sql_type.startswith('INT') or sql_type.startswith('FLOAT') or sql_type.startswith('REAL') %}
+                          <input id="{{ key }}__{{ col }}" name="{{ col }}" type="number" step="any"{% if is_required %} required{% endif %}>
+                        {% else %}
+                          <input id="{{ key }}__{{ col }}" name="{{ col }}" type="text"{% if is_required %} required{% endif %}>
+                        {% endif %}
+                      {% endif %}
+                    </td>
                   {% endif %}
                 {% endif %}
-              </td>
-            {% endif %}
-          {% endif %}
-        {% endfor %}
-      </tr>
-    {% endfor %}
+              {% endfor %}
+            </tr>
+          {% endfor %}
 
-    <tr>
-      <td class="form-label">
-        <label for="photo">Photo<span class="required-mark">*</span></label>
-      </td>
-      <td class="form-input">
-        <input id="photo" type="file" name="photo" accept="image/*" capture="environment" required>
-      </td>
-    </tr>
+          <tr>
+            <td class="form-label"><label for="{{ key }}__photo">Photo<span class="required-mark">*</span></label></td>
+            <td class="form-input"><input id="{{ key }}__photo" type="file" name="photo" accept="image/*" capture="environment"></td>
+          </tr>
 
-    {% if GPS_ENABLED %}
-    <tr>
-      <td class="form-label">
-        <label>GPS</label>
-      </td>
-      <td class="form-input">
-        <div class="small">Enabled</div>
-        <div id="gps_status" class="small">GPS: requesting location…</div>
-      </td>
-    </tr>
-
-    <tr>
-      <td colspan="2">
-        <input type="hidden" id="gps_lat" name="gps_lat">
-        <input type="hidden" id="gps_lon" name="gps_lon">
-        <input type="hidden" id="gps_acc" name="gps_acc">
-      </td>
-    </tr>
-{% else %}
-    <tr>
-      <td class="form-label">
-        <label>GPS</label>
-      </td>
-      <td class="form-input">
-        <div class="small">Disabled, GPS: lock not requested.</div>
-      </td>
-    </tr>
+          {% if GPS_ENABLED %}
+<tr>
+  <td class="form-label"><label>GPS</label></td>
+  <td class="form-input">
+    <div class="gps_status small">GPS: requesting location…</div>
+  </td>
+</tr>
+<tr style="display:none"><td colspan="2">
+  <input type="hidden" id="{{ key }}__gps_lat" name="gps_lat">
+  <input type="hidden" id="{{ key }}__gps_lon" name="gps_lon">
+  <input type="hidden" id="{{ key }}__gps_acc" name="gps_acc">
+</td></tr>
 {% endif %}
-  </table>
+        </table>
 
-  <div class="actions">
-    <button type="submit">Upload</button>
-    <button type="button" onclick="resetForm()">Reset</button>
-    <a class="btn" href="/recent">Recent</a>
-    <a class="btn" href="/admin">Edit</a>
-  </div>
-</form>
+        <div class="actions">
+          <button type="submit" name="submit_mode" value="image" onclick="requirePhoto(true)">Upload Image</button>
+          <button type="submit" name="submit_mode" value="metadata" onclick="requirePhoto(false)">Upload Metadata</button>
+          <button type="button" onclick="resetForm('{{ key }}')">Reset</button>
+          <a class="btn" href="{{ url_for('recent', type=key) }}">Recent</a>
+          <a class="btn" href="{{ url_for('admin_list', type=key) }}">Edit</a>
+        </div>
+      </form>
+    </div>
+  {% endfor %}
+</div>
+
 </div>
 
 <script>
-  const FIELD_NAMES = {{ input_fields | map(attribute=1) | list | tojson }};
-  const KEY = "artifact_capture_persist_v9";
-
+  const KEY = "tap_capture_persist_v1";
+  const TYPE_META = {{ OBJECT_TYPES | tojson }};
   const saved = JSON.parse(localStorage.getItem(KEY) || "{}");
 
-  FIELD_NAMES.forEach(name => {
-    const el = document.getElementById(name);
-    if (el && saved[name] !== undefined) {
-      el.value = saved[name];
-    }
+  function idsForType(t){
+    return (TYPE_META[t].input_fields || []).map(x => x[1]);
+  }
+
+  // Restore saved values per type
+  Object.keys(TYPE_META).forEach(t => {
+    const blob = saved[t] || {};
+    idsForType(t).forEach(name => {
+      const el = document.getElementById(`${t}__${name}`);
+      if (el && blob[name] !== undefined) el.value = blob[name];
+    });
   });
 
-  const requireGpsEl = document.getElementById("require_gps");
-  if (saved.require_gps !== undefined && requireGpsEl) {
-    requireGpsEl.checked = !!saved.require_gps;
-  }
-
-  function stash() {
-    const data = {};
-    FIELD_NAMES.forEach(name => {
-      const el = document.getElementById(name);
-      if (el) data[name] = el.value;
+  function stashType(t){
+    saved[t] = saved[t] || {};
+    idsForType(t).forEach(name => {
+      const el = document.getElementById(`${t}__${name}`);
+      if (el) saved[t][name] = el.value;
     });
-    const gpsEl = document.getElementById("require_gps");
-    data.require_gps = gpsEl ? gpsEl.checked : false;
-    try {
-      localStorage.setItem(KEY, JSON.stringify(data));
-    } catch (e) {
-      console.warn("Failed to write localStorage", e);
-    }
+    try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch(e) { console.warn(e); }
   }
 
-  FIELD_NAMES.concat(["require_gps"]).forEach(id => {
-    const el = document.getElementById(id);
-    if (el) {
-      el.addEventListener("input", stash);
-      el.addEventListener("change", stash);
-    }
+  Object.keys(TYPE_META).forEach(t => {
+    idsForType(t).forEach(name => {
+      const el = document.getElementById(`${t}__${name}`);
+      if (el){
+        el.addEventListener('input', () => stashType(t));
+        el.addEventListener('change', () => stashType(t));
+      }
+    });
   });
 
-  const formEl = document.getElementById("captureForm");
-  if (formEl) {
-    formEl.addEventListener("submit", function () {
-      try { stash(); } catch (e) { console.warn("stash() failed on submit", e); }
-    });
+  function resetForm(t){
+    const panel = document.querySelector(`.type-panel[data-type="${t}"]`);
+    const form = panel ? panel.querySelector('form') : null;
+    if (form) form.reset();
+    delete saved[t];
+    try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch(e) {}
+    const gpsStatuses = Array.from(document.querySelectorAll('.gps_status'));
+    gpsStatuses.forEach(el => el.textContent = 'GPS: requesting location…');
   }
 
-  function resetForm() {
-    if (!formEl) return;
-    formEl.reset();
-    try {
-      localStorage.removeItem(KEY);
-    } catch (e) {
-      console.warn("Failed to clear localStorage", e);
-    }
-    const gpsStatus = document.getElementById("gps_status");
-    if (gpsStatus) {
-      gpsStatus.textContent = "GPS: requesting location…";
-    }
-  }
-
-  function hideLastCard() {
-    const c = document.getElementById("lastCard");
-    if (c) c.style.display = "none";
+  function hideLastCard(){
+    const c = document.getElementById('lastCard');
+    if (c) c.style.display = 'none';
   }
 
   {% if GPS_ENABLED %}
-  const gpsStatus = document.getElementById("gps_status");
-  if (navigator.geolocation && gpsStatus) {
-    gpsStatus.textContent = "GPS: requesting location…";
+  const gpsStatuses = Array.from(document.querySelectorAll('.gps_status'));
+  function setGpsStatus(msg){ gpsStatuses.forEach(el => el.textContent = msg); }
+  if (navigator.geolocation && gpsStatuses.length) {
+    setGpsStatus("GPS: requesting location…");
     navigator.geolocation.getCurrentPosition(
       pos => {
-        document.getElementById('gps_lat').value = pos.coords.latitude.toFixed(6);
-        document.getElementById('gps_lon').value = pos.coords.longitude.toFixed(6);
-        document.getElementById('gps_acc').value = pos.coords.accuracy;
-        gpsStatus.textContent = `GPS: lock OK (±${Math.round(pos.coords.accuracy)} m)`;
+        const lat = pos.coords.latitude.toFixed(6);
+        const lon = pos.coords.longitude.toFixed(6);
+        const acc = pos.coords.accuracy;
+        Object.keys(TYPE_META).forEach(t => {
+          const la = document.getElementById(`${t}__gps_lat`);
+          const lo = document.getElementById(`${t}__gps_lon`);
+          const ac = document.getElementById(`${t}__gps_acc`);
+          if (la) la.value = lat;
+          if (lo) lo.value = lon;
+          if (ac) ac.value = acc;
+        });
+        setGpsStatus(`GPS: lock OK (±${Math.round(acc)} m)`);
       },
       err => {
-        gpsStatus.textContent = "GPS: unavailable or permission denied.";
+        setGpsStatus("GPS: unavailable or permission denied.");
         console.warn("Geolocation error:", err);
       },
       { enableHighAccuracy: true, maximumAge: 60000, timeout: 10000 }
     );
-  } else if (gpsStatus) {
-    gpsStatus.textContent = "GPS: browser does not support geolocation.";
+  } else if (gpsStatuses.length) {
+    setGpsStatus("GPS: browser does not support geolocation.");
   }
   {% endif %}
+
+    function requirePhoto(on){
+      document.querySelectorAll('input[type=file][name=photo]').forEach(el => { el.required = !!on; });
+    }
 </script>
 
 </body>

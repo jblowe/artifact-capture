@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Artifact Map</title>
+  <title>{{ meta.label }} Map</title>
   <style>
     body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;padding:0;background:#f5f5f5;}
     .banner{height:60px;background:#004c6d;color:#fff;display:flex;align-items:center;padding:0 1rem;font-size:1.05rem;}
@@ -15,11 +15,11 @@
   <script src="{{ url_for('static', filename='leaflet/leaflet.js') }}"></script>
 </head>
 <body>
-  <div class="banner">Artifact Capture · Map</div>
+  <div class="banner">TAP Capture · Map — {{ meta.label }}</div>
   <div id="topbar">
-    <a class="btn" href="/admin">← Admin list</a>
+    <a class="btn" href="/admin?type={{ otype|urlencode }}">← Admin list</a>
     <a class="btn" href="/">Form</a>
-    <span>Artifact map (GPS-enabled records)</span>
+    <span>{{ meta.label }} map (GPS-enabled records)</span>
   </div>
 
   <div id="mapStatus">
@@ -63,11 +63,11 @@
 
       const markers = L.layerGroup().addTo(map);
 
-      fetch('/admin/export.geojson')
+      fetch('/admin/export.geojson?type={{ otype|urlencode }}')
         .then(r => r.json())
         .then(data => {
           if (!data.features || !data.features.length) {
-            alert("No GPS-enabled artifacts yet.");
+            alert("No GPS-enabled records yet.");
             return;
           }
 
@@ -82,20 +82,25 @@
             const p = f.properties || {};
             const marker = L.marker([lat, lon]).addTo(markers);
 
-            const imgUrl = p.thumb_filename
-              ? "/uploads/" + encodeURIComponent(p.thumb_filename)
-              : (p.webp_filename
-                 ? "/uploads/" + encodeURIComponent(p.webp_filename)
-                 : "/uploads/" + encodeURIComponent(p.filename));
+            const thumbs = p.thumbs || [];
+            const images = p.images || [];
+            const imgUrl = thumbs.length
+              ? "/uploads/" + encodeURIComponent(thumbs[0])
+              : (images.length ? "/uploads/" + encodeURIComponent(images[0]) : "");
+
+            // Build a short key-field summary (first 6 non-empty configured fields)
+            const keys = [];
+            const cfgCols = {{ (meta.input_fields | map(attribute=1) | list) | tojson }};
+            cfgCols.forEach(c => { if (p[c]) keys.push(`<b>${c}</b>: ${p[c]}`); });
+            const keyHtml = keys.slice(0,6).join("<br>");
 
             const html =
-              "<strong>" + (p.excavation_unit || "") + " " + (p.tnumber || "") + "</strong><br>" +
-              "Lot " + (p.lot || "") + " · Area " + (p.area || "") + " · Level " + (p.level || "") + "<br>" +
-              (p.notes ? ("<em>" + p.notes + "</em><br>") : "") +
-              "<small>" + (p.camera || "") + " · " + (p.exif_datetime || "") + "</small><br>" +
-              "<a href=\"" + imgUrl + "\" target=\"_blank\">Open image</a>" +
-              (p.json_filename
-                ? "<br><a href=\"/uploads/" + encodeURIComponent(p.json_filename) + "\" target=\"_blank\">JSON</a>"
+              "<strong>ID " + (p.id || "") + "</strong><br>" +
+              (keyHtml ? (keyHtml + "<br>") : "") +
+              "<small>" + (p.camera || "") + (p.exif_datetime ? (" · " + p.exif_datetime) : "") + "</small><br>" +
+              (imgUrl ? ("<a href=\"" + imgUrl + "\" target=\"_blank\">Open image</a>") : "") +
+              (p.json_files && p.json_files.length
+                ? "<br><a href=\"/uploads/" + encodeURIComponent(p.json_files[p.json_files.length-1]) + "\" target=\"_blank\">JSON</a>"
                 : "");
 
             marker.bindPopup(html);

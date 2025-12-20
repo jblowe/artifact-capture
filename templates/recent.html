@@ -10,46 +10,46 @@
   th,td{border-bottom:1px solid #eee;padding:.4rem;text-align:left;vertical-align:top;font-size:.9rem;}
   img.thumb{max-height:80px;border-radius:6px;}
   .small{font-size:.8rem;color:#555;}
-  a.btn{padding:.25rem .5rem;border:1px solid #ddd;border-radius:999px;text-decoration:none;color:inherit;font-size:.8rem;white-space:nowrap;margin-right:.2rem;background:#fafafa;}
+  a.btn{padding:.25rem .5rem;border:1px solid #ddd;border-radius:999px;text-decoration:none;color:inherit;font-size:.8rem;white-space:nowrap;margin-right:.2rem;background:#fafafa;display:inline-block;}
 </style>
+
 <body>
-<div class="banner">Artifact Capture · Recent uploads</div>
+<div class="banner">TAP Capture · Recent · {{ meta.label }}</div>
 <div class="page">
-  <a class="btn" href="/">← Form</a>
-  <h3>Recent uploads</h3>
+  <a class="btn" href="{{ url_for('form', type=otype) }}">← Form</a>
+  <a class="btn" href="{{ url_for('admin_list', type=otype) }}">Edit</a>
+
   <table>
     <thead>
       <tr>
-        <th>ID</th><th>Image</th><th>Key fields</th><th>GPS</th><th>Files</th>
+        <th>ID</th><th>Image</th><th>Fields</th><th>GPS</th><th>Files</th>
       </tr>
     </thead>
     <tbody>
       {% for r in rows %}
+      {% set thumbs = (r['thumbs_json']|fromjson) %}
+      {% set images = (r['images_json']|fromjson) %}
+      {% set jfiles = (r['json_files_json']|fromjson) %}
       <tr>
-        <td>{{ r["id"] }}</td>
+        <td>{{ r['id'] }}</td>
         <td>
-          {% if r["thumb_filename"] %}
-            <img class="thumb" src="{{ '/uploads/' + r['thumb_filename'] | urlencode }}" alt="">
-          {% elif r["filename"] %}
-            <img class="thumb" src="{{ '/uploads/' + r['filename'] | urlencode }}" alt="">
+          {% if thumbs and thumbs[0] %}
+            <img class="thumb" src="{{ url_for('serve_upload', fname=thumbs[0]) }}" alt="">
+          {% elif images and images[0] %}
+            <img class="thumb" src="{{ url_for('serve_upload', fname=images[0]) }}" alt="">
           {% endif %}
+          {% if images %}<div class="small">{{ images|length }} image(s)</div>{% endif %}
         </td>
         <td class="small">
-          {% if r["date_recorded"] %}
-            <strong>Date recorded:</strong> {{ r["date_recorded"] }}<br>
-          {% endif %}
-          {% for f in input_fields %}
-            {% set label = f[0] %}
-            {% set col   = f[1] %}
-            {% if col in ["recorders","excavation_unit","tnumber","lot","area","level","notes"] and r[col] %}
-              <strong>{{ label }}:</strong> {{ r[col] }}<br>
-            {% endif %}
+          {% if r['date_recorded'] %}<strong>Date recorded:</strong> {{ r['date_recorded'] }}<br>{% endif %}
+          {% for col in meta.required_fields %}
+            {% if r[col] %}<strong>{{ meta.field_meta[col].label }}:</strong> {{ r[col] }}<br>{% endif %}
           {% endfor %}
         </td>
         <td class="small">
-          {% if r["gps_lat"] and r["gps_lon"] %}
-            {{ "%.6f"|format(r["gps_lat"]) }}, {{ "%.6f"|format(r["gps_lon"]) }}<br>
-            {% set osm, gmaps = maps_links(r["gps_lat"], r["gps_lon"]) %}
+          {% if r['gps_lat'] and r['gps_lon'] %}
+            {{ "%.6f"|format(r['gps_lat']) }}, {{ "%.6f"|format(r['gps_lon']) }}<br>
+            {% set osm, gmaps = maps_links(r['gps_lat'], r['gps_lon']) %}
             <a class="btn" href="{{ osm }}" target="_blank">OSM</a>
             <a class="btn" href="{{ gmaps }}" target="_blank">Maps</a>
           {% else %}
@@ -57,15 +57,8 @@
           {% endif %}
         </td>
         <td class="small">
-          {% if r["filename"] %}
-            <a class="btn" href="{{ '/uploads/' + r['filename'] | urlencode }}" target="_blank">JPEG</a>
-          {% endif %}
-          {% if r["webp_filename"] %}
-            <a class="btn" href="{{ '/uploads/' + r['webp_filename'] | urlencode }}" target="_blank">WebP</a>
-          {% endif %}
-          {% if r["json_filename"] %}
-            <a class="btn" href="{{ '/uploads/' + r['json_filename'] | urlencode }}" target="_blank">JSON</a>
-          {% endif %}
+          {% if images and images[0] %}<a class="btn" href="{{ url_for('serve_upload', fname=images[0]) }}" target="_blank">JPEG</a>{% endif %}
+          {% if jfiles and jfiles[-1] %}<a class="btn" href="{{ url_for('serve_upload', fname=jfiles[-1]) }}" target="_blank">JSON</a>{% endif %}
         </td>
       </tr>
       {% endfor %}

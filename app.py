@@ -9,7 +9,21 @@ import sqlite3, time, os, base64, json, ast
 
 from PIL import Image, ImageOps, ExifTags
 
-from config import input_fields, layout_rows, required_fields
+"""Artifact/Site capture app.
+
+A webapp to allow field workers and others to take and annotate photos with
+suitable metadata in the field and elsewhere.
+
+This version supports multiple object types (e.g., artifacts, sites) defined in
+config.py as `object_types`. Each object type maps to its own SQLite table and
+its own set of fields. Images for all types live in the same UPLOAD_DIR.
+
+Multiple images can be attached to the same record: when a user uploads another
+image with identical non-timestamp metadata for the same object type, we append
+the new image filenames to JSON lists stored on that record.
+"""
+
+from config import object_types
 
 APP_ROOT = Path(__file__).parent.resolve()
 
@@ -31,42 +45,74 @@ THUMB_DIM = int(os.getenv("ARTCAP_THUMB_DIM", "400"))
 JPEG_QUALITY = int(os.getenv("ARTCAP_JPEG_QUALITY", "92"))
 WEBP_QUALITY = int(os.getenv("ARTCAP_WEBP_QUALITY", "85"))
 
-GPS_ENABLED = os.getenv("ARTCAP_GPS_ENABLED", "0").lower() not in ("0", "false", "off", "no")
+GPS_ENABLED = os.getenv("ARTCAP_GPS_ENABLED", "1").lower() not in ("0", "false", "off", "no")
 app = Flask(__name__)
 app.secret_key = APP_SECRET
 
-FIELD_META = {}
-for f in input_fields:
-    label, col, sql_type = f[0], f[1], f[2]
-    widget_raw = f[3] if len(f) > 3 else ""
-    widget = "auto"
-    options = None
+
+def _parse_widget(widget_raw: str):
+    """Parse config widget descriptors.
+
+    Supports:
+      - DROPDOWN('A','B',...)
+    """
+    widget_raw = widget_raw or ""
     if isinstance(widget_raw, str) and widget_raw.upper().startswith("DROPDOWN"):
-        widget = "dropdown"
         try:
             start = widget_raw.index("(")
             inside = widget_raw[start:]
             vals = ast.literal_eval(inside)
             if isinstance(vals, (list, tuple)):
-                options = [str(v) for v in vals]
-            else:
-                options = [str(vals)]
+                return "dropdown", [str(v) for v in vals]
+            return "dropdown", [str(vals)]
         except Exception:
-            print(f'Could not parse {widget_raw} in config.py. Exiting')
-            exit(1)
-    FIELD_META[col] = {
+            print(f"[FATAL] Could not parse widget spec {widget_raw!r} in config.py")
+            raise
+    return "auto", None
+
+
+# Normalize and validate object_types config.
+OBJECT_TYPES = object_types or {}
+if not isinstance(OBJECT_TYPES, dict) or not OBJECT_TYPES:
+    raise RuntimeError("config.py must define a non-empty dict named object_types")
+
+TYPE_META = {}
+for otype, cfg in OBJECT_TYPES.items():
+    if not isinstance(cfg, dict):
+        raise RuntimeError(f"object_types[{otype!r}] must be a dict")
+    label = cfg.get("label") or otype.title()
+    input_fields = cfg.get("input_fields") or []
+    layout_rows = cfg.get("layout_rows") or []
+    required_fields = tuple(cfg.get("required_fields") or ())
+    if not input_fields:
+        raise RuntimeError(f"object_types[{otype!r}] has no input_fields")
+
+    field_meta = {}
+    for f in input_fields:
+        flabel, col, sql_type = f[0], f[1], f[2]
+        widget_raw = f[3] if len(f) > 3 else ""
+        widget, options = _parse_widget(widget_raw)
+        field_meta[col] = {
+            "label": flabel,
+            "col": col,
+            "sql_type": sql_type,
+            "widget": widget,
+            "options": options,
+            "required": col in required_fields,
+        }
+
+    TYPE_META[otype] = {
         "label": label,
-        "col": col,
-        "sql_type": sql_type,
-        "widget": widget,
-        "options": options,
-        "required": col in required_fields,
+        "input_fields": input_fields,
+        "display_fields": [f for f in input_fields if
+                           not (str((f[2] if len(f) > 2 else "") or "")).upper().startswith("TIMESTAMP")],
+        "layout_rows": layout_rows,
+        "required_fields": required_fields,
+        "field_meta": field_meta,
     }
 
-app.jinja_env.globals["input_fields"] = input_fields
-app.jinja_env.globals["layout_rows"] = layout_rows
-app.jinja_env.globals["field_meta"] = FIELD_META
-app.jinja_env.globals["required_fields"] = required_fields
+# Expose to templates.
+app.jinja_env.globals["OBJECT_TYPES"] = TYPE_META
 app.jinja_env.globals["GPS_ENABLED"] = GPS_ENABLED
 
 
@@ -77,16 +123,17 @@ def get_db():
 
 
 def init_db():
-    meta_cols = []
-    for f in input_fields:
-        label, col, coltype = f[0], f[1], f[2]
-        meta_cols.append((col, coltype))
+    """Create/upgrade DB tables for each configured object type."""
 
+    # Columns common to all object-type tables.
+    # Image fields are JSON-encoded lists so multiple images can attach to a record.
     base_cols = [
         ("id", "INTEGER PRIMARY KEY AUTOINCREMENT"),
-        ("filename", "TEXT"),
-        ("thumb_filename", "TEXT"),
-        ("webp_filename", "TEXT"),
+        ("images_json", "TEXT"),
+        ("thumbs_json", "TEXT"),
+        ("webps_json", "TEXT"),
+        ("json_files_json", "TEXT"),
+        ("meta_signature", "TEXT"),
         ("width", "INTEGER"),
         ("height", "INTEGER"),
         ("timestamp", "INTEGER"),
@@ -99,22 +146,28 @@ def init_db():
         ("gps_lat", "REAL"),
         ("gps_lon", "REAL"),
         ("gps_alt", "REAL"),
-        ("json_filename", "TEXT"),
     ]
 
     with get_db() as conn:
-        cols_sql = ",\n                ".join(
-            [f"{name} {ctype}" for name, ctype in [base_cols[0]] + meta_cols + base_cols[1:]]
-        )
-        conn.execute(f"CREATE TABLE IF NOT EXISTS artifacts ({cols_sql});")
+        for otype, meta in TYPE_META.items():
+            table = otype
+            meta_cols = [(f[1], f[2]) for f in meta["input_fields"]]
 
-        existing = {
-            row[1]
-            for row in conn.execute("PRAGMA table_info(artifacts)")
-        }
-        for name, ctype in meta_cols + base_cols:
-            if name not in existing:
-                conn.execute(f"ALTER TABLE artifacts ADD COLUMN {name} {ctype}")
+            cols_sql = ",\n                ".join(
+                [f"{name} {ctype}" for name, ctype in [base_cols[0]] + meta_cols + base_cols[1:]]
+            )
+            conn.execute(f"CREATE TABLE IF NOT EXISTS {table} ({cols_sql});")
+
+            existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+            for name, ctype in meta_cols + base_cols:
+                if name not in existing:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {ctype}")
+
+            # Helpful index for record matching by metadata signature.
+            try:
+                conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table}_meta_signature ON {table}(meta_signature)")
+            except Exception:
+                pass
 
 
 def ensure_runtime_paths():
@@ -280,28 +333,46 @@ def maps_links(lat, lon):
 
 
 app.jinja_env.globals["maps_links"] = maps_links
+app.jinja_env.filters["fromjson"] = lambda s: json.loads(s) if s else []
 
 
 @app.route("/", methods=["GET"])
 def form():
     last_id = request.args.get("last_id", type=int)
+    last_type = request.args.get("last_type", type=str)
     last_row = None
-    if last_id:
+    last_meta = None
+    if last_id and last_type and last_type in TYPE_META:
         with get_db() as conn:
             last_row = conn.execute(
-                "SELECT * FROM artifacts WHERE id=?", (last_id,)
+                f"SELECT * FROM {last_type} WHERE id=?", (last_id,)
             ).fetchone()
-    return render_template("upload.html", last_row=last_row)
+            last_meta = TYPE_META[last_type]
+    # Default selected tab
+    selected = request.args.get("type") or (last_type if last_type in TYPE_META else None)
+    if selected not in TYPE_META:
+        selected = next(iter(TYPE_META.keys()))
+    return render_template("upload.html", last_row=last_row, last_type=last_type, last_meta=last_meta,
+                           selected_type=selected)
 
 
 @app.route("/submit", methods=["POST"])
 def submit():
+    otype = (request.form.get("object_type") or "").strip().lower()
+    if otype not in TYPE_META:
+        flash("Unknown object type.")
+        return redirect(url_for("form"))
+
+    meta = TYPE_META[otype]
+    submit_mode = request.form.get("submit_mode", "image")
     ts = int(time.time())
     ts_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts))
 
+    # Coerce metadata values from request.form according to config.
     meta_values = {}
-    for f in input_fields:
-        label, col, coltype = f[0], f[1], f[2]
+    signature_values = {}
+    for fdef in meta["input_fields"]:
+        _label, col, coltype = fdef[0], fdef[1], fdef[2]
         t = (coltype or "TEXT").upper()
         if t.startswith("TIMESTAMP"):
             meta_values[col] = ts_str
@@ -310,38 +381,69 @@ def submit():
         raw = (request.form.get(col) or "").strip()
         if not raw:
             meta_values[col] = None
+            signature_values[col] = None
             continue
 
         if t.startswith("INT"):
             try:
-                meta_values[col] = int(raw)
+                v = int(raw)
             except ValueError:
-                meta_values[col] = None
+                v = None
         elif t.startswith("FLOAT") or t.startswith("REAL") or t.startswith("DOUBLE"):
             try:
-                meta_values[col] = float(raw)
+                v = float(raw)
             except ValueError:
-                meta_values[col] = None
+                v = None
         elif "DATE" in t and "TIME" not in t:
-            meta_values[col] = raw
+            v = raw
         else:
-            meta_values[col] = raw
+            v = raw
+        meta_values[col] = v
+        signature_values[col] = v
 
-    for col in required_fields:
+    for col in meta["required_fields"]:
         if not meta_values.get(col):
-            label = FIELD_META.get(col, {}).get("label", col.replace("_", " ").title())
+            label = meta["field_meta"].get(col, {}).get("label", col.replace("_", " ").title())
             flash(f"Please fill in required field: {label}.")
-            return redirect(url_for("form"))
+            return redirect(url_for("form", type=otype))
 
+    # GPS handling: we still accept browser GPS as a fallback when EXIF has none.
     require_gps = False
     if GPS_ENABLED:
         require_gps = request.form.get("require_gps") == "on"
 
-    f = request.files.get("photo")
+    # Metadata-only submission: create/update a row without requiring an image
+    if submit_mode == "metadata":
+        meta_signature = json.dumps(signature_values, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        with get_db() as conn:
+            row = conn.execute(
+                f"SELECT * FROM {otype} WHERE meta_signature=? ORDER BY id DESC LIMIT 1",
+                (meta_signature,),
+            ).fetchone()
 
+            meta_cols = [fdef[1] for fdef in meta["input_fields"]]
+            if row:
+                sets = ",".join([f"{c}=?" for c in meta_cols] + ["meta_signature=?", "timestamp=?"])
+                vals = [meta_values.get(c) for c in meta_cols] + [meta_signature, ts]
+                conn.execute(f"UPDATE {otype} SET {sets} WHERE id=?", vals + [row["id"]])
+            else:
+                db_cols = meta_cols + ["meta_signature", "images_json", "thumbs_json", "webps_json", "json_files_json",
+                                       "timestamp"]
+                vals = [meta_values.get(c) for c in meta_cols] + [
+                    meta_signature,
+                    json.dumps([]), json.dumps([]), json.dumps([]), json.dumps([]),
+                    ts,
+                ]
+                placeholders = ",".join(["?"] * len(db_cols))
+                conn.execute(f"INSERT INTO {otype} ({','.join(db_cols)}) VALUES ({placeholders})", vals)
+
+        flash("Metadata saved.")
+        return redirect(url_for("form", type=otype))
+
+    f = request.files.get("photo")
     if not f or f.filename == "":
         flash("Please take or choose a photo.")
-        return redirect(url_for("form"))
+        return redirect(url_for("form", type=otype))
 
     ip = request.headers.get("X-Forwarded-For", request.remote_addr)
     ua = request.headers.get("User-Agent", "")
@@ -360,13 +462,12 @@ def submit():
                     gps_alt = None
         except Exception:
             pass
-
         if require_gps and (gps_lat is None or gps_lon is None):
             flash(
                 "GPS is required, but no GPS was found in EXIF or browser location. "
                 "Please enable location and try again."
             )
-            return redirect(url_for("form"))
+            return redirect(url_for("form", type=otype))
 
     img, width, height = resize_if_needed(img)
     thumb = make_thumbnail(img)
@@ -376,33 +477,73 @@ def submit():
     exif_model = exif_small["exif_model"]
     exif_orientation = exif_small["exif_orientation"]
 
-    meta_cols = [f[1] for f in input_fields]
-    db_cols = meta_cols + [
-        "width", "height", "timestamp", "ip", "user_agent",
-        "exif_datetime", "exif_make", "exif_model", "exif_orientation",
-        "gps_lat", "gps_lon", "gps_alt",
-    ]
-    values = [meta_values[c] for c in meta_cols] + [
-        width, height, ts, ip, ua,
-        exif_datetime, exif_make, exif_model, exif_orientation,
-        gps_lat, gps_lon, gps_alt,
-    ]
+    meta_signature = json.dumps(signature_values, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+    def _load_list(val):
+        if not val:
+            return []
+        try:
+            x = json.loads(val)
+            return x if isinstance(x, list) else []
+        except Exception:
+            return []
+
+    def _make_base(record_id: int) -> str:
+        # Keep legacy artifact naming if those fields exist.
+        if otype == "artifacts" and all(
+                k in meta_values for k in ["excavation_unit", "tnumber", "lot", "area", "level"]):
+            unit = slug(meta_values.get("excavation_unit"))
+            tnum = slug(meta_values.get("tnumber"))
+            lot = slug(meta_values.get("lot"))
+            area = slug(meta_values.get("area"))
+            level = slug(meta_values.get("level"))
+            return f"TAP_2025_KNNM_{unit}_{tnum}_{lot}_{area}_{level}_ID{record_id}"
+        if otype == "sites":
+            sn = slug(meta_values.get("site_name"))
+            vill = slug(meta_values.get("village"))
+            return f"TAP_SITE_{vill}_{sn}_ID{record_id}"
+        return f"TAP_{otype.upper()}_ID{record_id}"
 
     with get_db() as conn:
-        placeholders = ",".join(["?"] * len(db_cols))
-        cur = conn.execute(
-            f"INSERT INTO artifacts ({','.join(db_cols)}) VALUES ({placeholders})",
-            values,
-        )
-        new_id = cur.lastrowid
+        # Try to match an existing record by metadata signature.
+        row = conn.execute(
+            f"SELECT * FROM {otype} WHERE meta_signature=? ORDER BY id DESC LIMIT 1",
+            (meta_signature,),
+        ).fetchone()
 
-        unit = slug(meta_values.get("excavation_unit"))
-        tnum = slug(meta_values.get("tnumber"))
-        lot = slug(meta_values.get("lot"))
-        area = slug(meta_values.get("area"))
-        level = slug(meta_values.get("level"))
-        base = f"TAP_2025_KNNM_{unit}_{tnum}_{lot}_{area}_{level}_ID{new_id}"
+        if row:
+            record_id = int(row["id"])
+            images = _load_list(row["images_json"])
+            thumbs = _load_list(row["thumbs_json"])
+            webps = _load_list(row["webps_json"])
+            jfiles = _load_list(row["json_files_json"])
+        else:
+            # Create a new record first.
+            meta_cols = [f[1] for f in meta["input_fields"]]
+            db_cols = meta_cols + [
+                "meta_signature",
+                "images_json", "thumbs_json", "webps_json", "json_files_json",
+                "width", "height", "timestamp", "ip", "user_agent",
+                "exif_datetime", "exif_make", "exif_model", "exif_orientation",
+                "gps_lat", "gps_lon", "gps_alt",
+            ]
+            values = [meta_values.get(c) for c in meta_cols] + [
+                meta_signature,
+                json.dumps([]), json.dumps([]), json.dumps([]), json.dumps([]),
+                width, height, ts, ip, ua,
+                exif_datetime, exif_make, exif_model, exif_orientation,
+                gps_lat, gps_lon, gps_alt,
+            ]
+            placeholders = ",".join(["?"] * len(db_cols))
+            cur = conn.execute(
+                f"INSERT INTO {otype} ({','.join(db_cols)}) VALUES ({placeholders})",
+                values,
+            )
+            record_id = cur.lastrowid
+            images, thumbs, webps, jfiles = [], [], [], []
 
+        img_idx = len(images) + 1
+        base = _make_base(record_id) + f"_IMG{img_idx}"
         jpg_name = f"{base}.jpg"
         thumb_name = f"{base}_thumb.jpg"
         webp_name = f"{base}.webp"
@@ -416,7 +557,9 @@ def submit():
         img.save(UPLOAD_DIR / webp_name, "WEBP", quality=WEBP_QUALITY, method=6)
 
         json_payload = {
-            "id": new_id,
+            "object_type": otype,
+            "record_id": record_id,
+            "image_index": img_idx,
             "tap_filename_base": base,
             "filename": jpg_name,
             "thumb_filename": thumb_name,
@@ -424,11 +567,7 @@ def submit():
             "timestamp": ts,
             "client_ip": ip,
             "user_agent": ua,
-            "gps": {
-                "lat": gps_lat,
-                "lon": gps_lon,
-                "alt": gps_alt,
-            },
+            "gps": {"lat": gps_lat, "lon": gps_lon, "alt": gps_alt},
             "exif": {
                 "datetime": exif_datetime,
                 "make": exif_make,
@@ -439,21 +578,38 @@ def submit():
         }
         (UPLOAD_DIR / json_name).write_text(json.dumps(json_payload, indent=2), encoding="utf-8")
 
+        images.append(jpg_name)
+        thumbs.append(thumb_name)
+        webps.append(webp_name)
+        jfiles.append(json_name)
+
+        # Update record with new image lists and latest capture context.
         conn.execute(
-            "UPDATE artifacts SET filename=?, thumb_filename=?, webp_filename=?, json_filename=? WHERE id=?",
-            (jpg_name, thumb_name, webp_name, json_name, new_id),
+            f"UPDATE {otype} SET images_json=?, thumbs_json=?, webps_json=?, json_files_json=?, "
+            "width=?, height=?, timestamp=?, ip=?, user_agent=?, exif_datetime=?, exif_make=?, exif_model=?, exif_orientation=?, gps_lat=?, gps_lon=?, gps_alt=? "
+            "WHERE id=?",
+            (
+                json.dumps(images), json.dumps(thumbs), json.dumps(webps), json.dumps(jfiles),
+                width, height, ts, ip, ua,
+                exif_datetime, exif_make, exif_model, exif_orientation,
+                gps_lat, gps_lon, gps_alt,
+                record_id,
+            ),
         )
 
-    return redirect(url_for("form", last_id=new_id))
+    return redirect(url_for("form", last_id=record_id, last_type=otype, type=otype))
 
 
 @app.route("/recent")
 def recent():
+    otype = (request.args.get("type") or "").strip().lower()
+    if otype not in TYPE_META:
+        otype = next(iter(TYPE_META.keys()))
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT * FROM artifacts ORDER BY id DESC LIMIT 100"
+            f"SELECT * FROM {otype} ORDER BY id DESC LIMIT 100"
         ).fetchall()
-    return render_template("recent.html", rows=rows)
+    return render_template("recent.html", rows=rows, otype=otype, meta=TYPE_META[otype])
 
 
 @app.route("/uploads/<path:fname>")
@@ -464,11 +620,15 @@ def serve_upload(fname):
 @app.route("/admin")
 @requires_admin
 def admin_list():
+    otype = (request.args.get("type") or "").strip().lower()
+    if otype not in TYPE_META:
+        otype = next(iter(TYPE_META.keys()))
+    meta = TYPE_META[otype]
     q = request.args.get("q", "").strip()
-    sql = "SELECT * FROM artifacts"
+    sql = f"SELECT * FROM {otype}"
     params = []
     if q:
-        text_cols = [f[1] for f in input_fields if f[2].upper().startswith("TEXT")]
+        text_cols = [f[1] for f in meta["input_fields"] if (f[2] or "").upper().startswith("TEXT")]
         if text_cols:
             where_clauses = [f"{c} LIKE ?" for c in text_cols]
             sql += " WHERE " + " OR ".join(where_clauses)
@@ -477,16 +637,21 @@ def admin_list():
     sql += " ORDER BY id DESC LIMIT 500"
     with get_db() as conn:
         rows = conn.execute(sql, params).fetchall()
-    return render_template("admin_list.html", rows=rows, q=q)
+    return render_template("admin_list.html", rows=rows, q=q, otype=otype, meta=meta)
 
 
-@app.route("/admin/edit/<int:aid>", methods=["GET", "POST"])
+@app.route("/admin/edit/<otype>/<int:aid>", methods=["GET", "POST"])
 @requires_admin
-def admin_edit(aid):
+def admin_edit(otype, aid):
+    otype = (otype or "").strip().lower()
+    if otype not in TYPE_META:
+        flash("Unknown object type")
+        return redirect(url_for("admin_list"))
+    meta = TYPE_META[otype]
     with get_db() as conn:
         if request.method == "POST":
             updates = {}
-            for f in input_fields:
+            for f in meta["input_fields"]:
                 label, col, coltype = f[0], f[1], f[2]
                 t = (coltype or "TEXT").upper()
                 if t.startswith("TIMESTAMP"):
@@ -509,50 +674,63 @@ def admin_edit(aid):
             if updates:
                 set_clause = ", ".join([f"{c}=?" for c in updates.keys()])
                 params = list(updates.values()) + [aid]
-                conn.execute(f"UPDATE artifacts SET {set_clause} WHERE id=?", params)
-                flash(f"Updated artifact {aid}")
-            return redirect(url_for("admin_list"))
+                conn.execute(f"UPDATE {otype} SET {set_clause} WHERE id=?", params)
+                flash(f"Updated {otype} {aid}")
+            return redirect(url_for("admin_list", type=otype))
 
-        row = conn.execute("SELECT * FROM artifacts WHERE id=?", (aid,)).fetchone()
+        row = conn.execute(f"SELECT * FROM {otype} WHERE id=?", (aid,)).fetchone()
     if not row:
         flash("Not found")
-        return redirect(url_for("admin_list"))
-    return render_template("admin_edit.html", r=row)
+        return redirect(url_for("admin_list", type=otype))
+    return render_template("admin_edit.html", r=row, otype=otype, meta=meta)
 
 
-@app.route("/admin/delete/<int:aid>", methods=["POST"])
+@app.route("/admin/delete/<otype>/<int:aid>", methods=["POST"])
 @requires_admin
-def admin_delete(aid):
+def admin_delete(otype, aid):
+    otype = (otype or "").strip().lower()
+    if otype not in TYPE_META:
+        flash("Unknown object type")
+        return redirect(url_for("admin_list"))
     with get_db() as conn:
         row = conn.execute(
-            "SELECT filename, thumb_filename, webp_filename, json_filename FROM artifacts WHERE id=?",
+            f"SELECT images_json, thumbs_json, webps_json, json_files_json FROM {otype} WHERE id=?",
             (aid,),
         ).fetchone()
-        conn.execute("DELETE FROM artifacts WHERE id=?", (aid,))
+        conn.execute(f"DELETE FROM {otype} WHERE id=?", (aid,))
     if row:
-        for fn in [row["filename"], row["thumb_filename"], row["json_filename"], row["webp_filename"]]:
+        try:
+            files = []
+            for col in ["images_json", "thumbs_json", "webps_json", "json_files_json"]:
+                files.extend(json.loads(row[col] or "[]") or [])
+        except Exception:
+            files = []
+        for fn in files:
             if fn:
                 try:
                     (UPLOAD_DIR / fn).unlink(missing_ok=True)
                 except Exception:
                     pass
-    flash(f"Deleted artifact {aid}")
-    return redirect(url_for("admin_list"))
+    flash(f"Deleted {otype} {aid}")
+    return redirect(url_for("admin_list", type=otype))
 
 
 @app.route("/admin/export.csv")
 @requires_admin
 def admin_export_csv():
+    otype = (request.args.get("type") or "").strip().lower()
+    if otype not in TYPE_META:
+        otype = next(iter(TYPE_META.keys()))
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT * FROM artifacts ORDER BY id ASC"
+            f"SELECT * FROM {otype} ORDER BY id ASC"
         ).fetchall()
         headers = rows[0].keys() if rows else []
 
     def generate():
         yield ",".join(headers) + "\n"
         with get_db() as conn2:
-            for r in conn2.execute("SELECT * FROM artifacts ORDER BY id ASC"):
+            for r in conn2.execute(f"SELECT * FROM {otype} ORDER BY id ASC"):
                 vals = []
                 for h in headers:
                     v = r[h]
@@ -568,31 +746,35 @@ def admin_export_csv():
     return Response(
         generate(),
         mimetype="text/csv",
-        headers={"Content-Disposition": "attachment; filename=artifacts.csv"},
+        headers={"Content-Disposition": f"attachment; filename={otype}.csv"},
     )
 
 
 @app.route("/admin/export.geojson")
 @requires_admin
 def admin_export_geojson():
+    otype = (request.args.get("type") or "").strip().lower()
+    if otype not in TYPE_META:
+        otype = next(iter(TYPE_META.keys()))
+    meta = TYPE_META[otype]
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT * FROM artifacts "
+            f"SELECT * FROM {otype} "
             "WHERE gps_lat IS NOT NULL AND gps_lon IS NOT NULL "
             "ORDER BY id ASC"
         ).fetchall()
     features = []
     for r in rows:
         props = {}
-        for f in input_fields:
+        for f in meta["input_fields"]:
             label, col, _ctype = f[0], f[1], f[2]
             props[col] = r[col]
         props.update({
             "id": r["id"],
-            "filename": r["filename"],
-            "thumb_filename": r["thumb_filename"],
-            "webp_filename": r["webp_filename"],
-            "json_filename": r["json_filename"],
+            "images": json.loads(r["images_json"] or "[]") if r["images_json"] else [],
+            "thumbs": json.loads(r["thumbs_json"] or "[]") if r["thumbs_json"] else [],
+            "webps": json.loads(r["webps_json"] or "[]") if r["webps_json"] else [],
+            "json_files": json.loads(r["json_files_json"] or "[]") if r["json_files_json"] else [],
             "timestamp": r["timestamp"],
             "exif_datetime": r["exif_datetime"],
             "camera": " ".join(p for p in [r["exif_make"], r["exif_model"]] if p),
@@ -612,7 +794,10 @@ def admin_export_geojson():
 @app.route("/admin/map")
 @requires_admin
 def admin_map():
-    return render_template("admin_map.html")
+    otype = (request.args.get("type") or "").strip().lower()
+    if otype not in TYPE_META:
+        otype = next(iter(TYPE_META.keys()))
+    return render_template("admin_map.html", otype=otype, meta=TYPE_META[otype])
 
 
 if __name__ == "__main__":

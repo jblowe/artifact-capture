@@ -3,52 +3,33 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Edit Artifact {{ r['id'] }}</title>
+  <title>Edit {{ meta.label }} {{ r['id'] }}</title>
   <style>
-    :root { --banner-h: 60px; --banner-bg: #1f6f8b; --banner-fg: #fff; }
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin:0; background:#f6f7f9; color:#111; }
-    .banner { height: var(--banner-h); background: var(--banner-bg); color: var(--banner-fg); display:flex; align-items:center; padding:0 16px; }
-    .banner h1 { font-size: 18px; margin:0; font-weight: 650; }
-    .wrap { max-width: 1100px; margin: 16px auto; padding: 0 12px; }
-    .card { background:#fff; border:1px solid #e6e8ec; border-radius: 12px; box-shadow: 0 1px 2px rgba(0,0,0,.04); overflow:hidden; }
-    .card-hd { padding: 12px 14px; border-bottom:1px solid #eef0f3; display:flex; align-items:center; justify-content:space-between; gap:12px; }
-    .card-hd .meta { font-size: 13px; color:#555; }
-    .grid { display:grid; grid-template-columns: 1fr; gap: 12px; padding: 14px; }
-    table { width:100%; border-collapse: collapse; }
-    td { padding: 6px 8px; vertical-align: top; }
-    td.label { width: 240px; color:#333; font-size: 13px; white-space: nowrap; }
-    td.field { width: auto; }
-    input[type="text"], input[type="number"], textarea, select {
-      width: 100%;
-      box-sizing: border-box;
-      padding: 7px 9px;
-      border: 1px solid #d7dbe3;
-      border-radius: 8px;
-      font-size: 14px;
-      background: #fff;
-    }
-    textarea { min-height: 90px; resize: vertical; }
-    .readonly { background:#f3f5f8; color:#444; }
-    .actions { display:flex; gap:10px; align-items:center; }
-    .btn { border: 1px solid #c9ced8; background:#fff; padding: 7px 10px; border-radius: 10px; cursor:pointer; font-weight: 650; font-size: 13px; text-decoration:none; color:#111; }
-    .btn.primary { background:#0b6efd; border-color:#0b6efd; color:#fff; }
-    .btn.danger { background:#dc3545; border-color:#dc3545; color:#fff; }
-    .row2 { display:grid; grid-template-columns: 1.1fr .9fr; gap: 12px; }
-    .imgbox { border:1px solid #eef0f3; border-radius: 12px; padding: 10px; background:#fafbfc; }
-    .imgbox img { max-width: 100%; height: auto; display:block; border-radius: 10px; border:1px solid #e1e5ec; }
-    .kv { font-size: 13px; color:#333; line-height: 1.35; }
-    .flash { margin: 12px 0; padding: 10px 12px; border-radius: 10px; background:#fff3cd; border:1px solid #ffe69c; }
-    .muted { color:#666; font-size: 12px; }
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;background:#f6f7f9;color:#111;}
+    .banner{height:60px;background:#004c6d;color:#fff;display:flex;align-items:center;padding:0 16px;}
+    .wrap{max-width:1100px;margin:16px auto;padding:0 12px;}
+    .card{background:#fff;border:1px solid #e6e8ec;border-radius:12px;box-shadow:0 1px 2px rgba(0,0,0,.04);overflow:hidden;}
+    .card-hd{padding:12px 14px;border-bottom:1px solid #eef0f3;display:flex;align-items:center;justify-content:space-between;gap:12px;}
+    .meta{font-size:13px;color:#555;}
+    .grid{display:grid;grid-template-columns:1.1fr .9fr;gap:12px;padding:14px;}
+    table{width:100%;border-collapse:collapse;}
+    td{padding:6px 8px;vertical-align:top;}
+    td.label{width:260px;color:#333;font-size:13px;white-space:nowrap;}
+    input[type="text"],input[type="number"],textarea,select{width:100%;box-sizing:border-box;padding:7px 9px;border:1px solid #d7dbe3;border-radius:8px;font-size:14px;background:#fff;}
+    textarea{min-height:90px;resize:vertical;}
+    .actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+    .btn{border:1px solid #c9ced8;background:#fff;padding:7px 10px;border-radius:10px;cursor:pointer;font-weight:650;font-size:13px;text-decoration:none;color:#111;display:inline-block;}
+    .btn.primary{background:#0b6efd;border-color:#0b6efd;color:#fff;}
+    .btn.danger{background:#dc3545;border-color:#dc3545;color:#fff;}
+    .imgbox{border:1px solid #eef0f3;border-radius:12px;padding:10px;background:#fafbfc;}
+    .imgbox img{max-width:100%;height:auto;display:block;border-radius:10px;border:1px solid #e1e5ec;margin-bottom:8px;}
+    .small{font-size:12px;color:#666;}
+    .flash{margin:12px 0;padding:10px 12px;border-radius:10px;background:#fff3cd;border:1px solid #ffe69c;}
   </style>
 </head>
 <body>
-  <div class="banner">
-    <h1>TAP Artifact Capture — Admin</h1>
-  </div>
-
+  <div class="banner"><strong>TAP Capture — Admin</strong></div>
   <div class="wrap">
-{% if textarea_fields is not defined %}{% set textarea_fields = ["notes"] %}{% endif %}
-{% if dropdown_options is not defined %}{% set dropdown_options = {} %}{% endif %}
 
     {% with messages = get_flashed_messages() %}
       {% if messages %}
@@ -61,97 +42,84 @@
     <div class="card">
       <div class="card-hd">
         <div>
-          <div style="font-weight:700;">Edit artifact #{{ r['id'] }}</div>
-          <div class="meta">
-            {% if (r['date_recorded'] if 'date_recorded' in r.keys() else '') %}Recorded: {{ r['date_recorded'] }}{% endif %}
-          </div>
+          <div style="font-weight:800;">Edit {{ meta.label }} #{{ r['id'] }}</div>
+          <div class="meta">{% if r['date_recorded'] %}Recorded: {{ r['date_recorded'] }}{% endif %}</div>
         </div>
         <div class="actions">
-          <a class="btn" href="{{ url_for('admin_list') }}">Back</a>
-          <form method="post" action="{{ url_for('admin_delete', aid=r['id']) }}" style="margin:0;" onsubmit="return confirm('Delete artifact {{ r['id'] }}? This will remove DB row and files.');">
+          <a class="btn" href="{{ url_for('admin_list', type=otype) }}">Back</a>
+          <form method="post" action="{{ url_for('admin_delete', otype=otype, aid=r['id']) }}" style="margin:0;" onsubmit="return confirm('Delete {{ meta.label }} {{ r['id'] }}? This will remove the DB row and all attached files.');">
             <button class="btn danger" type="submit">Delete</button>
           </form>
         </div>
       </div>
 
       <div class="grid">
-        <div class="row2">
-          <div>
-            <form method="post" action="{{ url_for('admin_edit', aid=r['id']) }}">
-              <table>
-                <tr>
-                  <td class="label">Artifact ID</td>
-                  <td class="field"><input class="readonly" type="text" value="{{ r['id'] }}" readonly></td>
-                </tr>
+        <div>
+          <form method="post" action="{{ url_for('admin_edit', otype=otype, aid=r['id']) }}">
+            <table>
+              <tr>
+                <td class="label">Record ID</td>
+                <td><input type="text" value="{{ r['id'] }}" readonly></td>
+              </tr>
+              {% for f in meta.input_fields %}
+                {% set label = f[0] %}
+                {% set col = f[1] %}
+                {% set t = (f[2] or 'TEXT')|upper %}
+                {% if not t.startswith('TIMESTAMP') %}
+                  <tr>
+                    <td class="label">{{ label }}</td>
+                    <td>
+                      {% set fm = meta.field_meta[col] %}
+                      {% if fm.widget == 'dropdown' and fm.options %}
+                        <select name="{{ col }}">
+                          <option value=""></option>
+                          {% for opt in fm.options %}
+                            <option value="{{ opt }}" {% if ((r[col] or '') == opt) %}selected{% endif %}>{{ opt }}</option>
+                          {% endfor %}
+                        </select>
+                      {% elif col in ['notes','description'] %}
+                        <textarea name="{{ col }}">{{ r[col] or '' }}</textarea>
+                      {% elif t.startswith('INT') %}
+                        <input type="number" step="1" name="{{ col }}" value="{{ r[col] or '' }}">
+                      {% elif t.startswith('FLOAT') or t.startswith('REAL') or t.startswith('DOUBLE') %}
+                        <input type="number" step="any" name="{{ col }}" value="{{ r[col] or '' }}">
+                      {% else %}
+                        <input type="text" name="{{ col }}" value="{{ r[col] or '' }}">
+                      {% endif %}
+                    </td>
+                  </tr>
+                {% endif %}
+              {% endfor %}
+            </table>
 
-                {# Render configured fields (skip timestamps: admin_edit route ignores them anyway) #}
-                {% for f in input_fields %}{% set label = f[0] %}{% set col = f[1] %}{% set coltype = f[2] %}
-                  {% set t = (coltype or 'TEXT')|upper %}
-                  {% if not t.startswith('TIMESTAMP') %}
-                    <tr>
-                      <td class="label">{{ label }}</td>
-                      <td class="field">
-                        {% if t.startswith('DROPDOWN') and dropdown_options.get(col) %}
-                          <select name="{{ col }}">
-                            <option value=""></option>
-                            {% for opt in dropdown_options[col] %}
-                              <option value="{{ opt }}" {% if ((r[col] if col in r.keys() else '') or '') == opt %}selected{% endif %}>{{ opt }}</option>
-                            {% endfor %}
-                          </select>
-                        {% elif col in textarea_fields %}
-                          <textarea name="{{ col }}">{{ (r[col] if col in r.keys() else '') or '' }}</textarea>
-                        {% elif t.startswith('INT') %}
-                          <input type="number" step="1" name="{{ col }}" value="{{ (r[col] if col in r.keys() else '') or '' }}">
-                        {% elif t.startswith('FLOAT') or t.startswith('REAL') or t.startswith('DOUBLE') %}
-                          <input type="number" step="any" name="{{ col }}" value="{{ (r[col] if col in r.keys() else '') or '' }}">
-                        {% else %}
-                          <input type="text" name="{{ col }}" value="{{ (r[col] if col in r.keys() else '') or '' }}">
-                        {% endif %}
-                      </td>
-                    </tr>
-                  {% endif %}
-                {% endfor %}
-              </table>
-
-              <div style="display:flex; gap:10px; margin-top: 12px;">
-                <button class="btn primary" type="submit">Save changes</button>
-                <a class="btn" href="{{ url_for('admin_list') }}">Cancel</a>
-              </div>
-              <div class="muted" style="margin-top:8px;">
-                Note: Date Recorded is auto-generated and not editable.
-              </div>
-            </form>
-          </div>
-
-          <div class="imgbox">
-            <div class="kv">
-              {% if (r['thumb_filename'] if 'thumb_filename' in r.keys() else '') %}
-                <img src="{{ url_for('serve_upload', fname=r['thumb_filename']) }}" alt="thumbnail">
-              {% elif (r['filename'] if 'filename' in r.keys() else '') %}
-                <img src="{{ url_for('serve_upload', fname=r['filename']) }}" alt="image">
-              {% else %}
-                <div class="muted">No image filename stored for this record.</div>
-              {% endif %}
-              <div style="margin-top:10px;">
-                {% if (r['latitude'] if 'latitude' in r.keys() else '') and (r['longitude'] if 'longitude' in r.keys() else '') %}
-                  <div><b>GPS</b>: {{ r['latitude'] }}, {{ r['longitude'] }}</div>
-                {% else %}
-                  <div class="muted">GPS: (none)</div>
-                {% endif %}
-                {% if (r['filename'] if 'filename' in r.keys() else '') %}
-                  <div><b>File</b>: {{ r['filename'] }}</div>
-                {% endif %}
-                {% if (r['json_filename'] if 'json_filename' in r.keys() else '') %}
-                  <div><b>JSON</b>: {{ r['json_filename'] }}</div>
-                {% endif %}
-                {% if (r['webp_filename'] if 'webp_filename' in r.keys() else '') %}
-                  <div><b>WebP</b>: {{ r['webp_filename'] }}</div>
-                {% endif %}
-              </div>
+            <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;">
+              <button class="btn primary" type="submit">Save changes</button>
+              <a class="btn" href="{{ url_for('admin_list', type=otype) }}">Cancel</a>
             </div>
-          </div>
+            <div class="small" style="margin-top:8px;">Date recorded is auto-generated and not editable.</div>
+          </form>
         </div>
 
+        <div class="imgbox">
+          {% set thumbs = (r['thumbs_json']|fromjson) %}
+          {% set images = (r['images_json']|fromjson) %}
+          {% set jfiles = (r['json_files_json']|fromjson) %}
+          {% if thumbs and thumbs[0] %}
+            <img src="{{ url_for('serve_upload', fname=thumbs[0]) }}" alt="thumbnail">
+          {% elif images and images[0] %}
+            <img src="{{ url_for('serve_upload', fname=images[0]) }}" alt="image">
+          {% else %}
+            <div class="small">No images attached.</div>
+          {% endif %}
+
+          <div class="small"><strong>Images:</strong> {{ images|length }}</div>
+          {% if r['gps_lat'] and r['gps_lon'] %}
+            <div class="small"><strong>GPS:</strong> {{ '%.6f'|format(r['gps_lat']) }}, {{ '%.6f'|format(r['gps_lon']) }}</div>
+          {% endif %}
+          {% if jfiles %}
+            <div class="small"><strong>Latest JSON:</strong> <a href="{{ url_for('serve_upload', fname=jfiles[-1]) }}" target="_blank">{{ jfiles[-1] }}</a></div>
+          {% endif %}
+        </div>
       </div>
     </div>
   </div>
