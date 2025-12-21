@@ -14,7 +14,7 @@ from PIL import Image, ImageOps, ExifTags
 A webapp to allow field workers and others to take and annotate photos with
 suitable metadata in the field and elsewhere.
 
-This version supports multiple object types (e.g., artifacts, sites) defined in
+It supports multiple object types (e.g., artifacts, sites) defined in
 config.py as `object_types`. Each object type maps to its own SQLite table and
 its own set of fields. Images for all types live in the same UPLOAD_DIR.
 
@@ -45,7 +45,7 @@ THUMB_DIM = int(os.getenv("ARTCAP_THUMB_DIM", "400"))
 JPEG_QUALITY = int(os.getenv("ARTCAP_JPEG_QUALITY", "92"))
 WEBP_QUALITY = int(os.getenv("ARTCAP_WEBP_QUALITY", "85"))
 
-GPS_ENABLED = os.getenv("ARTCAP_GPS_ENABLED", "1").lower() not in ("0", "false", "off", "no")
+GPS_ENABLED = os.getenv("ARTCAP_GPS_ENABLED", "0").lower() in ("1", "true", "on", "yes")
 app = Flask(__name__)
 app.secret_key = APP_SECRET
 
