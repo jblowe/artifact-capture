@@ -25,10 +25,12 @@ source venv/bin/activate  # or venv\Scripts\activate on Windows
 
 pip install -r requirements.txt
 
-export ARTCAP_ADMIN_USER=jlowe
+export ARTCAP_ADMIN_USER=admin_user
 export ARTCAP_ADMIN_PASS='a-strong-secret'
 export ARTCAP_SECRET='another-secret'
-# to disable GPS location use (on by default)
+
+# to enable GPS location use (off by default)
+export ARTCAP_GPS_ENABLED=on
 
 python app.py
 ```
