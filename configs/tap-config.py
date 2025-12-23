@@ -10,17 +10,15 @@
 #
 # Banner / UI config:
 APP_BRAND = "TAP"
-APP_SUBTITLE = ""          # optional, shown smaller in the banner
+APP_SUBTITLE = ""  # optional, shown smaller in the banner
 APP_LOGO = "tap-logo-small-v2.png"
-ADMIN_LABEL = "Admin"      # label used in admin page titles
+ADMIN_LABEL = "Admin"  # label used in admin page titles
 FILENAME_PREFIX = "TAP"  # prefix used for generated filenames
 
-
-BANNER_BG = '#A51931'      # navbar background
-BANNER_FG = '#ffffff'      # navbar text
+BANNER_BG = '#A51931'  # navbar background
+BANNER_FG = '#ffffff'  # navbar text
 BANNER_ACCENT = "#60a5fa"  # active link underline/accent
-SHOW_LOGO = True            # looks for static/images/logo.svg
-
+SHOW_LOGO = True  # looks for static/images/logo.svg
 
 object_types = {
     'artifacts':
