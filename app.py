@@ -70,8 +70,12 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return raw in ("1", "true", "yes", "y", "on")
 
 
-# GPS is disabled by default. Enable with ARTCAP_GPS_ENABLED=1 (or true/yes/on).
-GPS_ENABLED = _env_bool("ARTCAP_GPS_ENABLED", default=False)
+# GPS feature flag.
+#
+# Precedence:
+#   1) If ARTCAP_GPS_ENABLED is set in the environment, it wins.
+#   2) Otherwise fall back to config.GPS_ENABLED (if present), else False.
+GPS_ENABLED = _env_bool("ARTCAP_GPS_ENABLED", default=getattr(config, "GPS_ENABLED", False))
 app = Flask(__name__)
 app.secret_key = APP_SECRET
 
