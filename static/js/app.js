@@ -91,6 +91,107 @@
   }
 
   // ---- admin map (Leaflet) ----
+
+  function initGPSCapture() {
+    // Handles capturing client GPS and storing into hidden form fields.
+    // Looks for a status element: .gps_status
+    const statusEl = document.querySelector(".gps_status");
+    if (!statusEl) return; // page doesn't have GPS UI
+
+    // Helpers
+    function setStatus(msg) {
+      statusEl.textContent = msg;
+    }
+    function findField(selectors) {
+      for (const sel of selectors) {
+        const el = document.querySelector(sel);
+        if (el) return el;
+      }
+      return null;
+    }
+    // Try a few common names/ids from earlier iterations
+    const latEl = findField(['input[name="gps_lat"]','input#gps_lat','input[name="lat"]','input#lat']);
+    const lonEl = findField(['input[name="gps_lon"]','input[name="gps_lng"]','input#gps_lon','input#gps_lng','input[name="lon"]','input#lon','input[name="lng"]','input#lng']);
+    const accEl = findField(['input[name="gps_acc"]','input[name="gps_accuracy"]','input#gps_acc','input#gps_accuracy','input[name="accuracy"]','input#accuracy']);
+    const tsEl  = findField(['input[name="gps_ts"]','input[name="gps_timestamp"]','input#gps_ts','input#gps_timestamp']);
+
+    function clearFields() {
+      if (latEl) latEl.value = "";
+      if (lonEl) lonEl.value = "";
+      if (accEl) accEl.value = "";
+      if (tsEl)  tsEl.value = "";
+    }
+
+    function formatCoords(lat, lon) {
+      // Keep decent precision without being unreadable
+      return `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+    }
+
+    function requestOnce() {
+      if (!("geolocation" in navigator)) {
+        clearFields();
+        setStatus("GPS not available in this browser.");
+        return;
+      }
+
+      setStatus("Requesting location…");
+
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const c = pos.coords || {};
+          const lat = Number(c.latitude);
+          const lon = Number(c.longitude);
+          const acc = Number(c.accuracy);
+
+          if (Number.isFinite(lat) && Number.isFinite(lon)) {
+            if (latEl) latEl.value = String(lat);
+            if (lonEl) lonEl.value = String(lon);
+            if (accEl && Number.isFinite(acc)) accEl.value = String(acc);
+            if (tsEl) tsEl.value = String(pos.timestamp || Date.now());
+            setStatus(`GPS OK: ${formatCoords(lat, lon)}${Number.isFinite(acc) ? " (±" + Math.round(acc) + "m)" : ""}`);
+          } else {
+            clearFields();
+            setStatus("GPS failed: invalid coordinates returned.");
+          }
+        },
+        (err) => {
+          clearFields();
+          // err.code: 1=denied, 2=unavailable, 3=timeout
+          const msg = (err && err.message) ? err.message : "Unknown error";
+          setStatus(`GPS failed (${err && err.code ? err.code : "?"}): ${msg}`);
+          // Helpful hint for the most common case
+          if (err && err.code === 1) {
+            // Permission denied: user/site setting likely blocks prompts, especially on iOS
+            statusEl.title = "If you're on iPhone/iPad: Settings → Privacy & Security → Location Services → Safari Websites → set to 'While Using the App', then allow location for this site.";
+          }
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+      );
+    }
+
+    // Prefer a user gesture so iOS reliably prompts. Make the status clickable.
+    statusEl.style.cursor = "pointer";
+    statusEl.setAttribute("role", "button");
+    statusEl.setAttribute("tabindex", "0");
+
+    function onActivate() { requestOnce(); }
+    statusEl.addEventListener("click", onActivate);
+    statusEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        onActivate();
+      }
+    });
+
+    // Initial message; also try once automatically (works if permission already granted).
+    clearFields();
+    setStatus("Tap to capture location");
+    // Auto-attempt shortly after load for users who have already granted permission
+    setTimeout(() => requestOnce(), 350);
+  }
+
+
+
   function initAdminMap() {
     const mapEl = document.getElementById("map");
     if (!mapEl) return;
@@ -174,5 +275,6 @@
   document.addEventListener("DOMContentLoaded", function () {
     initFormPersistence();
     initAdminMap();
-  });
+      initGPSCapture();
+});
 })();
