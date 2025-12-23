@@ -3,32 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Edit {{ meta.label }} {{ r['id'] }}</title>
-  <style>
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;background:#f6f7f9;color:#111;}
-    .banner{height:60px;background:#004c6d;color:#fff;display:flex;align-items:center;padding:0 16px;}
-    .wrap{max-width:1100px;margin:16px auto;padding:0 12px;}
-    .card{background:#fff;border:1px solid #e6e8ec;border-radius:12px;box-shadow:0 1px 2px rgba(0,0,0,.04);overflow:hidden;}
-    .card-hd{padding:12px 14px;border-bottom:1px solid #eef0f3;display:flex;align-items:center;justify-content:space-between;gap:12px;}
-    .meta{font-size:13px;color:#555;}
-    .grid{display:grid;grid-template-columns:1.1fr .9fr;gap:12px;padding:14px;}
-    table{width:100%;border-collapse:collapse;}
-    td{padding:6px 8px;vertical-align:top;}
-    td.label{width:260px;color:#333;font-size:13px;white-space:nowrap;}
-    input[type="text"],input[type="number"],textarea,select{width:100%;box-sizing:border-box;padding:7px 9px;border:1px solid #d7dbe3;border-radius:8px;font-size:14px;background:#fff;}
-    textarea{min-height:90px;resize:vertical;}
-    .actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
-    .btn{border:1px solid #c9ced8;background:#fff;padding:7px 10px;border-radius:10px;cursor:pointer;font-weight:650;font-size:13px;text-decoration:none;color:#111;display:inline-block;}
-    .btn.primary{background:#0b6efd;border-color:#0b6efd;color:#fff;}
-    .btn.danger{background:#dc3545;border-color:#dc3545;color:#fff;}
-    .imgbox{border:1px solid #eef0f3;border-radius:12px;padding:10px;background:#fafbfc;}
-    .imgbox img{max-width:100%;height:auto;display:block;border-radius:10px;border:1px solid #e1e5ec;margin-bottom:8px;}
-    .small{font-size:12px;color:#666;}
-    .flash{margin:12px 0;padding:10px 12px;border-radius:10px;background:#fff3cd;border:1px solid #ffe69c;}
-  </style>
+  
+<link rel="stylesheet" href="{{ url_for('static', filename='styles/app.css') }}">
+<script defer src="{{ url_for('static', filename='js/app.js') }}"></script>
+<title>Edit {{ meta.label }} {{ r['id'] }}</title>
+  
 </head>
 <body>
-  <div class="banner"><strong>TAP Capture — Admin</strong></div>
+{% include "_banner.html" %}
   <div class="wrap">
 
     {% with messages = get_flashed_messages() %}
@@ -46,7 +28,6 @@
           <div class="meta">{% if r['date_recorded'] %}Recorded: {{ r['date_recorded'] }}{% endif %}</div>
         </div>
         <div class="actions">
-          <a class="btn" href="{{ url_for('admin_list', type=otype) }}">Back</a>
           <form method="post" action="{{ url_for('admin_delete', otype=otype, aid=r['id']) }}" style="margin:0;" onsubmit="return confirm('Delete {{ meta.label }} {{ r['id'] }}? This will remove the DB row and all attached files.');">
             <button class="btn danger" type="submit">Delete</button>
           </form>
@@ -104,10 +85,24 @@
           {% set thumbs = (r['thumbs_json']|fromjson) %}
           {% set images = (r['images_json']|fromjson) %}
           {% set jfiles = (r['json_files_json']|fromjson) %}
-          {% if thumbs and thumbs[0] %}
-            <img src="{{ url_for('serve_upload', fname=thumbs[0]) }}" alt="thumbnail">
-          {% elif images and images[0] %}
-            <img src="{{ url_for('serve_upload', fname=images[0]) }}" alt="image">
+          {% if thumbs %}
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+              {% for t in thumbs %}
+                {% set i = loop.index0 %}
+                {% if images and (images|length > i) and images[i] %}
+                  {% set href = url_for('serve_upload', fname=images[i]) %}
+                {% else %}
+                  {% set href = url_for('serve_upload', fname=t) %}
+                {% endif %}
+                <a href="{{ href }}" target="_blank">
+                  <img src="{{ url_for('serve_upload', fname=t) }}" alt="thumbnail" style="max-height:90px;width:auto;">
+                </a>
+              {% endfor %}
+            </div>
+          {% elif images %}
+            <a href="{{ url_for('serve_upload', fname=images[-1]) }}" target="_blank">
+              <img src="{{ url_for('serve_upload', fname=images[-1]) }}" alt="image">
+            </a>
           {% else %}
             <div class="small">No images attached.</div>
           {% endif %}
@@ -117,7 +112,14 @@
             <div class="small"><strong>GPS:</strong> {{ '%.6f'|format(r['gps_lat']) }}, {{ '%.6f'|format(r['gps_lon']) }}</div>
           {% endif %}
           {% if jfiles %}
-            <div class="small"><strong>Latest JSON:</strong> <a href="{{ url_for('serve_upload', fname=jfiles[-1]) }}" target="_blank">{{ jfiles[-1] }}</a></div>
+            <div class="small"><strong>JSON:</strong>
+              <a href="{{ url_for('admin_record_json', otype=otype, aid=r['id']) }}" target="_blank">view</a>
+            </div>
+            <div class="small"><strong>Image JSON files:</strong>
+              {% for jf in jfiles %}
+                <a href="{{ url_for('serve_upload', fname=jf) }}" target="_blank">{{ jf }}</a>{% if not loop.last %}, {% endif %}
+              {% endfor %}
+            </div>
           {% endif %}
         </div>
       </div>

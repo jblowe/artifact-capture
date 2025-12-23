@@ -1,23 +1,22 @@
 <!doctype html>
 <html lang="en">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+
+<link rel="stylesheet" href="{{ url_for('static', filename='styles/app.css') }}">
+<script defer src="{{ url_for('static', filename='js/app.js') }}"></script>
 <title>Recent uploads</title>
-<style>
-  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;padding:0;background:#f5f5f5;}
-  .banner{height:60px;background:#004c6d;color:#fff;display:flex;align-items:center;padding:0 1rem;font-size:1.05rem;}
-  .page{max-width:1100px;margin:0 auto;padding:.5rem .75rem;}
-  table{width:100%;border-collapse:collapse;background:#fff;}
-  th,td{border-bottom:1px solid #eee;padding:.4rem;text-align:left;vertical-align:top;font-size:.9rem;}
-  img.thumb{max-height:80px;border-radius:6px;}
-  .small{font-size:.8rem;color:#555;}
-  a.btn{padding:.25rem .5rem;border:1px solid #ddd;border-radius:999px;text-decoration:none;color:inherit;font-size:.8rem;white-space:nowrap;margin-right:.2rem;background:#fafafa;display:inline-block;}
-</style>
 
 <body>
-<div class="banner">TAP Capture · Recent · {{ meta.label }}</div>
+{% include "_banner.html" %}
 <div class="page">
-  <a class="btn" href="{{ url_for('form', type=otype) }}">← Form</a>
-  <a class="btn" href="{{ url_for('admin_list', type=otype) }}">Edit</a>
+
+
+  <div class="tabs">
+    {% for k, m in OBJECT_TYPES.items() %}
+      <a class="tab {% if k == otype %}active{% endif %}" href="{{ url_for('recent', type=k) }}">{{ m.label }}</a>
+    {% endfor %}
+  </div>
+
 
   <table>
     <thead>
@@ -33,10 +32,23 @@
       <tr>
         <td>{{ r['id'] }}</td>
         <td>
-          {% if thumbs and thumbs[0] %}
-            <img class="thumb" src="{{ url_for('serve_upload', fname=thumbs[0]) }}" alt="">
-          {% elif images and images[0] %}
-            <img class="thumb" src="{{ url_for('serve_upload', fname=images[0]) }}" alt="">
+          {% if thumbs %}
+            {% set total = thumbs|length %}
+            {% set show = thumbs[(total-2) if total>2 else 0:] %}
+            {% set start = total - (show|length) %}
+            <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">
+              {% for t in show %}
+                {% set i = start + loop.index0 %}
+                {% if images and (images|length > i) and images[i] %}
+                  {% set href = url_for('serve_upload', fname=images[i]) %}
+                {% else %}
+                  {% set href = url_for('serve_upload', fname=t) %}
+                {% endif %}
+                <a href="{{ href }}" target="_blank"><img class="thumb" src="{{ url_for('serve_upload', fname=t) }}" alt=""></a>
+              {% endfor %}
+            </div>
+          {% elif images and images[-1] %}
+            <a href="{{ url_for('serve_upload', fname=images[-1]) }}" target="_blank"><img class="thumb" src="{{ url_for('serve_upload', fname=images[-1]) }}" alt=""></a>
           {% endif %}
           {% if images %}<div class="small">{{ images|length }} image(s)</div>{% endif %}
         </td>
@@ -57,7 +69,13 @@
           {% endif %}
         </td>
         <td class="small">
-          {% if images and images[0] %}<a class="btn" href="{{ url_for('serve_upload', fname=images[0]) }}" target="_blank">JPEG</a>{% endif %}
+          {% if images %}
+            {% if images|length == 1 %}
+              <a class="btn" href="{{ url_for('serve_upload', fname=images[0]) }}" target="_blank">JPEG</a>
+            {% else %}
+              <a class="btn" href="{{ url_for('admin_record_images', otype=otype, aid=r['id']) }}" target="_blank">JPEG</a>
+            {% endif %}
+          {% endif %}
           {% if jfiles and jfiles[-1] %}<a class="btn" href="{{ url_for('serve_upload', fname=jfiles[-1]) }}" target="_blank">JSON</a>{% endif %}
         </td>
       </tr>

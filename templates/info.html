@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<link rel="stylesheet" href="{{ url_for('static', filename='styles/app.css') }}">
+<script defer src="{{ url_for('static', filename='js/app.js') }}"></script>
+<title>Info</title>
+<body>
+{% include "_banner.html" %}
+<div class="page">
+  <div class="card">
+    <h3 style="margin:.1rem 0 .4rem 0;">Info</h3>
+    <div class="small">
+      This page is reserved for documentation / workflow notes / help text.
+    </div>
+  </div>
+</div>
+</body>
+</html>

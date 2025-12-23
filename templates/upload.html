@@ -1,66 +1,14 @@
 <!doctype html>
 <html lang="en">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TAP Capture</title>
 
-<style>
-  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;padding:0;background:#f5f5f5;}
-  .banner{height:60px;background:#004c6d;color:#fff;display:flex;align-items:center;padding:0 1rem;font-size:1.05rem;}
-  .page{max-width:980px;margin:0 auto;padding:0.5rem 0.75rem;}
-  .card{border:1px solid #ddd;border-radius:10px;padding:.6rem .75rem;margin:.5rem 0;background:#fff;}
-  .small{font-size:.85rem;color:#555;}
-  .tabs{display:flex;gap:.35rem;flex-wrap:wrap;margin:.25rem 0 .6rem 0;}
-  .tab{padding:.25rem .6rem;border:1px solid #ddd;border-radius:999px;background:#fafafa;text-decoration:none;color:inherit;font-size:.85rem;}
-  .tab.active{background:#004c6d;color:#fff;border-color:#004c6d;}
+<link rel="stylesheet" href="{{ url_for('static', filename='styles/app.css') }}">
+<script defer src="{{ url_for('static', filename='js/app.js') }}"></script>
+<title>{{ APP_BRAND }}</title>
 
-  table.form-table{width:100%;border-collapse:collapse;}
-  .form-table td{padding:.15rem .25rem;vertical-align:middle;font-size:.9rem;}
-  .form-label{white-space:nowrap;font-size:.85rem;color:#333;text-align:right;width:1%;}
-  .form-input input,.form-input select,.form-input textarea{width:100%;box-sizing:border-box;padding:.32rem .45rem;font-size:.9rem;}
-  textarea{min-height:2.5rem;}
-  .actions{display:flex;gap:.5rem;margin-top:.5rem;flex-wrap:wrap;}
-  a.btn,button{padding:.35rem .7rem;border-radius:999px;border:1px solid #ddd;background:#fafafa;font-size:.85rem;text-decoration:none;color:inherit;cursor:pointer;}
-  a.btn{display:inline-block;}
-  img.thumb{max-width:100%;max-height:160px;border-radius:8px;display:block;margin-top:.4rem;}
-
-  .required-mark{color:#c00;margin-left:2px;}
-  #gps_status{font-size:.8rem;color:#555;margin-top:.25rem;}
-
-  .card-last{position:relative;}
-  .card-close{position:absolute;top:6px;right:8px;border:none;background:transparent;font-size:1.1rem;line-height:1;cursor:pointer;color:#999;}
-  .card-close:hover{color:#000;}
-  .card-last-inner{display:flex;gap:.75rem;flex-wrap:wrap;}
-  .card-last-col{flex:1 1 0;min-width:260px;}
-/* --- Tab styling (make selector look like tabs, not buttons) --- */
-.tabs {
-  display: flex;
-  gap: 0;
-  margin: .25rem 0 .6rem 0;
-  border-bottom: 1px solid #ccc;
-  flex-wrap: wrap;
-}
-.tabs .tab {
-  display: inline-block;
-  padding: .35rem .9rem;
-  border: 1px solid #ccc;
-  border-bottom: none;
-  background: #eee;
-  cursor: pointer;
-  font-size: .85rem;
-  border-radius: .4rem .4rem 0 0;
-  margin-bottom: -1px;
-  text-decoration: none;
-  color: inherit;
-}
-.tabs .tab + .tab { margin-left: .25rem; }
-.tabs .tab.active {
-  background: #fff;
-  font-weight: 600;
-}
-</style>
 
 <body>
-<div class="banner">TAP Capture</div>
+{% include "_banner.html" %}
 <div class="page">
 
 {% if last_row and last_type and last_meta %}
@@ -88,10 +36,22 @@
       <div class="card-last-col">
         {% set thumbs = (last_row["thumbs_json"]|fromjson) %}
         {% set images = (last_row["images_json"]|fromjson) %}
-        {% if thumbs and thumbs[0] %}
-          <img class="thumb" src="{{ url_for('serve_upload', fname=thumbs[0]) }}" alt="thumbnail">
-        {% elif images and images[0] %}
-          <img class="thumb" src="{{ url_for('serve_upload', fname=images[0]) }}" alt="image">
+        {% if thumbs %}
+          <div class="thumb-strip">
+            {% for t in thumbs %}
+              {% set i = loop.index0 %}
+              {% if images and (images|length > i) and images[i] %}
+                {% set href = url_for('serve_upload', fname=images[i]) %}
+              {% else %}
+                {% set href = url_for('serve_upload', fname=t) %}
+              {% endif %}
+              <a href="{{ href }}" target="_blank"><img class="thumb" src="{{ url_for('serve_upload', fname=t) }}" alt="thumbnail"></a>
+            {% endfor %}
+          </div>
+        {% elif images and images[-1] %}
+          <a href="{{ url_for('serve_upload', fname=images[-1]) }}" target="_blank">
+            <img class="thumb" src="{{ url_for('serve_upload', fname=images[-1]) }}" alt="image">
+          </a>
         {% endif %}
         {% if images %}
           <div class="small">Images attached: {{ images|length }}</div>
@@ -200,8 +160,6 @@
           <button type="submit" name="submit_mode" value="image" onclick="requirePhoto(true)">Upload Image</button>
           <button type="submit" name="submit_mode" value="metadata" onclick="requirePhoto(false)">Upload Metadata</button>
           <button type="button" onclick="resetForm('{{ key }}')">Reset</button>
-          <a class="btn" href="{{ url_for('recent', type=key) }}">Recent</a>
-          <a class="btn" href="{{ url_for('admin_list', type=key) }}">Edit</a>
         </div>
       </form>
     </div>
@@ -210,93 +168,6 @@
 
 </div>
 
-<script>
-  const KEY = "tap_capture_persist_v1";
-  const TYPE_META = {{ OBJECT_TYPES | tojson }};
-  const saved = JSON.parse(localStorage.getItem(KEY) || "{}");
-
-  function idsForType(t){
-    return (TYPE_META[t].input_fields || []).map(x => x[1]);
-  }
-
-  // Restore saved values per type
-  Object.keys(TYPE_META).forEach(t => {
-    const blob = saved[t] || {};
-    idsForType(t).forEach(name => {
-      const el = document.getElementById(`${t}__${name}`);
-      if (el && blob[name] !== undefined) el.value = blob[name];
-    });
-  });
-
-  function stashType(t){
-    saved[t] = saved[t] || {};
-    idsForType(t).forEach(name => {
-      const el = document.getElementById(`${t}__${name}`);
-      if (el) saved[t][name] = el.value;
-    });
-    try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch(e) { console.warn(e); }
-  }
-
-  Object.keys(TYPE_META).forEach(t => {
-    idsForType(t).forEach(name => {
-      const el = document.getElementById(`${t}__${name}`);
-      if (el){
-        el.addEventListener('input', () => stashType(t));
-        el.addEventListener('change', () => stashType(t));
-      }
-    });
-  });
-
-  function resetForm(t){
-    const panel = document.querySelector(`.type-panel[data-type="${t}"]`);
-    const form = panel ? panel.querySelector('form') : null;
-    if (form) form.reset();
-    delete saved[t];
-    try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch(e) {}
-    const gpsStatuses = Array.from(document.querySelectorAll('.gps_status'));
-    gpsStatuses.forEach(el => el.textContent = 'GPS: requesting location…');
-  }
-
-  function hideLastCard(){
-    const c = document.getElementById('lastCard');
-    if (c) c.style.display = 'none';
-  }
-
-  {% if GPS_ENABLED %}
-  const gpsStatuses = Array.from(document.querySelectorAll('.gps_status'));
-  function setGpsStatus(msg){ gpsStatuses.forEach(el => el.textContent = msg); }
-  if (navigator.geolocation && gpsStatuses.length) {
-    setGpsStatus("GPS: requesting location…");
-    navigator.geolocation.getCurrentPosition(
-      pos => {
-        const lat = pos.coords.latitude.toFixed(6);
-        const lon = pos.coords.longitude.toFixed(6);
-        const acc = pos.coords.accuracy;
-        Object.keys(TYPE_META).forEach(t => {
-          const la = document.getElementById(`${t}__gps_lat`);
-          const lo = document.getElementById(`${t}__gps_lon`);
-          const ac = document.getElementById(`${t}__gps_acc`);
-          if (la) la.value = lat;
-          if (lo) lo.value = lon;
-          if (ac) ac.value = acc;
-        });
-        setGpsStatus(`GPS: lock OK (±${Math.round(acc)} m)`);
-      },
-      err => {
-        setGpsStatus("GPS: unavailable or permission denied.");
-        console.warn("Geolocation error:", err);
-      },
-      { enableHighAccuracy: true, maximumAge: 60000, timeout: 10000 }
-    );
-  } else if (gpsStatuses.length) {
-    setGpsStatus("GPS: browser does not support geolocation.");
-  }
-  {% endif %}
-
-    function requirePhoto(on){
-      document.querySelectorAll('input[type=file][name=photo]').forEach(el => { el.required = !!on; });
-    }
-</script>
 
 </body>
 </html>

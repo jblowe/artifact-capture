@@ -1,6 +1,6 @@
 from flask import (
     Flask, render_template, request, redirect, url_for,
-    flash, Response, send_from_directory, jsonify
+    flash, Response, send_from_directory, jsonify, g
 )
 from pathlib import Path
 from functools import wraps
@@ -9,7 +9,9 @@ import sqlite3, time, os, base64, json, ast
 
 from PIL import Image, ImageOps, ExifTags
 
-"""Artifact/Site capture app.
+import config
+
+"""Artifact/Site capture app
 
 A webapp to allow field workers and others to take and annotate photos with
 suitable metadata in the field and elsewhere.
@@ -23,7 +25,14 @@ image with identical non-timestamp metadata for the same object type, we append
 the new image filenames to JSON lists stored on that record.
 """
 
-from config import object_types
+import config as app_config
+
+object_types = app_config.object_types
+APP_BRAND = getattr(app_config, 'APP_BRAND', 'Artifact Capture')
+APP_SUBTITLE = getattr(app_config, 'APP_SUBTITLE', '')
+APP_LOGO = getattr(app_config, 'APP_LOGO', 'logo.svg')
+ADMIN_LABEL = getattr(app_config, 'ADMIN_LABEL', 'Admin')
+FILENAME_PREFIX = getattr(app_config, 'FILENAME_PREFIX', 'CAPTURE')
 
 APP_ROOT = Path(__file__).parent.resolve()
 
@@ -45,7 +54,24 @@ THUMB_DIM = int(os.getenv("ARTCAP_THUMB_DIM", "400"))
 JPEG_QUALITY = int(os.getenv("ARTCAP_JPEG_QUALITY", "92"))
 WEBP_QUALITY = int(os.getenv("ARTCAP_WEBP_QUALITY", "85"))
 
-GPS_ENABLED = os.getenv("ARTCAP_GPS_ENABLED", "0").lower() in ("1", "true", "on", "yes")
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    """Parse a boolean env var.
+
+    Accepts: 1/0, true/false, yes/no, on/off (case-insensitive).
+    Missing or empty values fall back to `default`.
+    """
+    raw = os.getenv(name)
+    if raw is None:
+        return bool(default)
+    raw = str(raw).strip().lower()
+    if raw == "":
+        return bool(default)
+    return raw in ("1", "true", "yes", "y", "on")
+
+
+# GPS is disabled by default. Enable with ARTCAP_GPS_ENABLED=1 (or true/yes/on).
+GPS_ENABLED = _env_bool("ARTCAP_GPS_ENABLED", default=False)
 app = Flask(__name__)
 app.secret_key = APP_SECRET
 
@@ -113,6 +139,79 @@ for otype, cfg in OBJECT_TYPES.items():
 
 # Expose to templates.
 app.jinja_env.globals["OBJECT_TYPES"] = TYPE_META
+
+
+def make_banner_title(*parts: str) -> str:
+    base = APP_BRAND
+    if APP_SUBTITLE:
+        base = f"{base} · {APP_SUBTITLE}"
+    parts = [p for p in parts if p]
+    if parts:
+        return " · ".join(parts)
+    return base
+
+
+def _get_current_type() -> str:
+    """Best-effort object type for navbar URLs."""
+    # Prefer explicit value set by routes that render templates.
+    try:
+        if getattr(g, "current_type", None):
+            ct = str(g.current_type)
+            if ct in TYPE_META:
+                return ct
+    except Exception:
+        pass
+
+    # Try URL params
+    for k in ("type", "object_type"):
+        v = (request.view_args or {}).get(k) if hasattr(request, "view_args") else None
+        if v and str(v) in TYPE_META:
+            return str(v)
+        v = request.args.get(k) if hasattr(request, "args") else None
+        if v and str(v) in TYPE_META:
+            return str(v)
+
+    # Fallback: first configured type
+    return next(iter(TYPE_META.keys()))
+
+
+@app.context_processor
+def inject_globals():
+    ct = _get_current_type()
+    endpoint = (request.endpoint or '').lower() if hasattr(request, 'endpoint') else ''
+    # Treat all admin_* endpoints as 'edit' for navbar highlighting.
+    active = {
+        'upload': endpoint in ('form',),
+        'recent': endpoint in ('recent',),
+        'edit': endpoint.startswith('admin_'),
+        'info': endpoint in ('info',),
+        'user': endpoint in ('user',),
+    }
+
+    nav_links = [
+        {'key': 'upload', 'label': 'Upload', 'url': url_for('form', type=ct), 'active': active['upload']},
+        {'key': 'recent', 'label': 'Recent', 'url': url_for('recent', type=ct), 'active': active['recent']},
+        {'key': 'edit', 'label': 'Edit', 'url': url_for('admin_list', type=ct), 'active': active['edit']},
+        {'key': 'info', 'label': 'Info', 'url': url_for('info'), 'active': active['info']},
+        {'key': 'user', 'label': 'Account', 'url': url_for('user'), 'active': active['user']},
+    ]
+
+    return {
+        'APP_BRAND': getattr(config, 'APP_BRAND', 'Artifact Capture'),
+        'APP_SUBTITLE': getattr(config, 'APP_SUBTITLE', ''),
+        'APP_LOGO': getattr(config, 'APP_LOGO', 'logo.svg'),
+        'ADMIN_LABEL': getattr(config, 'ADMIN_LABEL', 'Admin'),
+        'GPS_ENABLED': GPS_ENABLED,
+
+        'BANNER_BG': getattr(config, 'BANNER_BG', '#1f2937'),
+        'BANNER_FG': getattr(config, 'BANNER_FG', '#ffffff'),
+        'BANNER_ACCENT': getattr(config, 'BANNER_ACCENT', '#60a5fa'),
+        'SHOW_LOGO': getattr(config, 'SHOW_LOGO', True),
+
+        'NAV_LINKS': nav_links,
+    }
+
+
 app.jinja_env.globals["GPS_ENABLED"] = GPS_ENABLED
 
 
@@ -352,8 +451,11 @@ def form():
     selected = request.args.get("type") or (last_type if last_type in TYPE_META else None)
     if selected not in TYPE_META:
         selected = next(iter(TYPE_META.keys()))
-    return render_template("upload.html", last_row=last_row, last_type=last_type, last_meta=last_meta,
-                           selected_type=selected)
+    g.current_type = selected
+    return render_template("upload.html",
+                           last_row=last_row, last_type=last_type, last_meta=last_meta,
+                           selected_type=selected,
+                           banner_title=make_banner_title('Capture'))
 
 
 @app.route("/submit", methods=["POST"])
@@ -497,12 +599,12 @@ def submit():
             lot = slug(meta_values.get("lot"))
             area = slug(meta_values.get("area"))
             level = slug(meta_values.get("level"))
-            return f"TAP_2025_KNNM_{unit}_{tnum}_{lot}_{area}_{level}_ID{record_id}"
+            return f"{FILENAME_PREFIX}_ARTIFACT_{unit}_{tnum}_{lot}_{area}_{level}_ID{record_id}"
         if otype == "sites":
             sn = slug(meta_values.get("site_name"))
             vill = slug(meta_values.get("village"))
-            return f"TAP_SITE_{vill}_{sn}_ID{record_id}"
-        return f"TAP_{otype.upper()}_ID{record_id}"
+            return f"{FILENAME_PREFIX}_SITE_{vill}_{sn}_ID{record_id}"
+        return f"{FILENAME_PREFIX}_{otype.upper()}_ID{record_id}"
 
     with get_db() as conn:
         # Try to match an existing record by metadata signature.
@@ -556,11 +658,12 @@ def submit():
         thumb.convert("RGB").save(UPLOAD_DIR / thumb_name, format="JPEG", quality=85)
         img.save(UPLOAD_DIR / webp_name, "WEBP", quality=WEBP_QUALITY, method=6)
 
+        # Per-image JSON sidecar (one file per captured image)
         json_payload = {
             "object_type": otype,
             "record_id": record_id,
             "image_index": img_idx,
-            "tap_filename_base": base,
+            "filename_base": base,
             "filename": jpg_name,
             "thumb_filename": thumb_name,
             "webp_filename": webp_name,
@@ -576,12 +679,69 @@ def submit():
             },
             "fields": meta_values,
         }
-        (UPLOAD_DIR / json_name).write_text(json.dumps(json_payload, indent=2), encoding="utf-8")
-
+        # Append new files to the record lists first so we can embed the full list
+        # in both the record-level JSON and the per-image JSON (useful for downstream tooling).
         images.append(jpg_name)
         thumbs.append(thumb_name)
         webps.append(webp_name)
         jfiles.append(json_name)
+
+        # Embed the full record image lists into the per-image JSON sidecar.
+        json_payload["record_images"] = list(images)
+        json_payload["record_thumbs"] = list(thumbs)
+        json_payload["record_webps"] = list(webps)
+        json_payload["record_image_json_files"] = list(jfiles)
+
+        (UPLOAD_DIR / json_name).write_text(json.dumps(json_payload, indent=2), encoding="utf-8")
+
+        # Record-level JSON sidecar (one file per record, updated on every capture)
+        record_json_name = f"{_make_base(record_id)}_record.json"
+        record_payload = {
+            "object_type": otype,
+            "record_id": record_id,
+            "timestamp": ts,
+            "client_ip": ip,
+            "user_agent": ua,
+            "gps": {"lat": gps_lat, "lon": gps_lon, "alt": gps_alt},
+            "exif": {
+                "datetime": exif_datetime,
+                "make": exif_make,
+                "model": exif_model,
+                "orientation": exif_orientation,
+            },
+            "fields": meta_values,
+            "images": list(images),
+            "thumbs": list(thumbs),
+            "webps": list(webps),
+            "image_json_files": list(jfiles),
+        }
+        (UPLOAD_DIR / record_json_name).write_text(json.dumps(record_payload, indent=2), encoding="utf-8")
+
+        # Record-level JSON sidecar (updated on every submission; includes ALL images)
+        record_json_name = f"{_make_base(record_id)}_record.json"
+        record_payload = {
+            "object_type": otype,
+            "record_id": record_id,
+            "timestamp": ts,
+            "client_ip": ip,
+            "user_agent": ua,
+            "gps": {"lat": gps_lat, "lon": gps_lon, "alt": gps_alt},
+            "exif": {
+                "datetime": exif_datetime,
+                "make": exif_make,
+                "model": exif_model,
+                "orientation": exif_orientation,
+            },
+            "fields": meta_values,
+            "images": images,
+            "thumbs": thumbs,
+            "webps": webps,
+            "image_json_files": jfiles,
+        }
+        (UPLOAD_DIR / record_json_name).write_text(
+            json.dumps(record_payload, indent=2),
+            encoding="utf-8",
+        )
 
         # Update record with new image lists and latest capture context.
         conn.execute(
@@ -605,11 +765,36 @@ def recent():
     otype = (request.args.get("type") or "").strip().lower()
     if otype not in TYPE_META:
         otype = next(iter(TYPE_META.keys()))
+    g.current_type = otype
     with get_db() as conn:
         rows = conn.execute(
             f"SELECT * FROM {otype} ORDER BY id DESC LIMIT 100"
         ).fetchall()
-    return render_template("recent.html", rows=rows, otype=otype, meta=TYPE_META[otype])
+    return render_template(
+        "recent.html",
+        rows=rows,
+        otype=otype,
+        meta=TYPE_META[otype],
+        banner_title=make_banner_title("Recent", TYPE_META[otype]["label"]),
+    )
+
+
+@app.route("/info")
+def info():
+    """Stub page for future app information/help."""
+    return render_template(
+        "info.html",
+        banner_title=make_banner_title("Instructions"),
+    )
+
+
+@app.route("/user")
+def user():
+    """Stub page for future user/profile/auth UI."""
+    return render_template(
+        "user.html",
+        banner_title=make_banner_title("Account"),
+    )
 
 
 @app.route("/uploads/<path:fname>")
@@ -623,6 +808,7 @@ def admin_list():
     otype = (request.args.get("type") or "").strip().lower()
     if otype not in TYPE_META:
         otype = next(iter(TYPE_META.keys()))
+    g.current_type = otype
     meta = TYPE_META[otype]
     q = request.args.get("q", "").strip()
     sql = f"SELECT * FROM {otype}"
@@ -637,7 +823,14 @@ def admin_list():
     sql += " ORDER BY id DESC LIMIT 500"
     with get_db() as conn:
         rows = conn.execute(sql, params).fetchall()
-    return render_template("admin_list.html", rows=rows, q=q, otype=otype, meta=meta)
+    return render_template(
+        "admin_list.html",
+        rows=rows,
+        q=q,
+        otype=otype,
+        meta=meta,
+        banner_title=make_banner_title("Edit", meta["label"]),
+    )
 
 
 @app.route("/admin/edit/<otype>/<int:aid>", methods=["GET", "POST"])
@@ -648,6 +841,7 @@ def admin_edit(otype, aid):
         flash("Unknown object type")
         return redirect(url_for("admin_list"))
     meta = TYPE_META[otype]
+    g.current_type = otype
     with get_db() as conn:
         if request.method == "POST":
             updates = {}
@@ -682,7 +876,14 @@ def admin_edit(otype, aid):
     if not row:
         flash("Not found")
         return redirect(url_for("admin_list", type=otype))
-    return render_template("admin_edit.html", r=row, otype=otype, meta=meta)
+    g.current_type = otype
+    return render_template(
+        "admin_edit.html",
+        r=row,
+        otype=otype,
+        meta=meta,
+        banner_title=make_banner_title("Edit", meta["label"], f"ID {aid}"),
+    )
 
 
 @app.route("/admin/delete/<otype>/<int:aid>", methods=["POST"])
@@ -750,6 +951,95 @@ def admin_export_csv():
     )
 
 
+@app.route("/admin/record/<otype>/<int:aid>.json")
+@requires_admin
+def admin_record_json(otype: str, aid: int):
+    """Return a single record as JSON, including *all* attached images."""
+    otype = (otype or "").strip().lower()
+    if otype not in TYPE_META:
+        return jsonify({"error": "Unknown object type"}), 404
+    meta = TYPE_META[otype]
+    with get_db() as conn:
+        row = conn.execute(f"SELECT * FROM {otype} WHERE id=?", (aid,)).fetchone()
+    if not row:
+        return jsonify({"error": "Not found"}), 404
+
+    def _loads(val):
+        if not val:
+            return []
+        try:
+            x = json.loads(val)
+            return x if isinstance(x, list) else []
+        except Exception:
+            return []
+
+    fields = {}
+    for f in meta["input_fields"]:
+        col = f[1]
+        fields[col] = row[col]
+
+    payload = {
+        "object_type": otype,
+        "record_id": row["id"],
+        "fields": fields,
+        "images": _loads(row["images_json"]),
+        "thumbs": _loads(row["thumbs_json"]),
+        "webps": _loads(row["webps_json"]),
+        "image_json_files": _loads(row["json_files_json"]),
+        "timestamp": row["timestamp"],
+        "client_ip": row["ip"],
+        "user_agent": row["user_agent"],
+        "gps": {"lat": row["gps_lat"], "lon": row["gps_lon"], "alt": row["gps_alt"]},
+        "exif": {
+            "datetime": row["exif_datetime"],
+            "make": row["exif_make"],
+            "model": row["exif_model"],
+            "orientation": row["exif_orientation"],
+        },
+    }
+    return jsonify(payload)
+
+
+@app.route("/admin/record/<otype>/<int:aid>/images")
+@requires_admin
+def admin_record_images(otype: str, aid: int):
+    """Render a gallery of *all* images for a record.
+
+    This exists because many records can accumulate multiple photos, and linking to a single
+    JPEG is confusing.
+    """
+    otype = (otype or "").strip().lower()
+    if otype not in TYPE_META:
+        return "Unknown object type", 404
+    g.current_type = otype
+    meta = TYPE_META[otype]
+    with get_db() as conn:
+        row = conn.execute(f"SELECT * FROM {otype} WHERE id=?", (aid,)).fetchone()
+    if not row:
+        return "Not found", 404
+
+    def _loads(val):
+        if not val:
+            return []
+        try:
+            x = json.loads(val)
+            return x if isinstance(x, list) else []
+        except Exception:
+            return []
+
+    images = _loads(row["images_json"])
+    thumbs = _loads(row["thumbs_json"])
+    return render_template(
+        "record_images.html",
+        otype=otype,
+        meta=meta,
+        r=row,
+        images=images,
+        thumbs=thumbs,
+        banner_title=make_banner_title("Images", f"{meta['label']} {row['id']}"),
+    )
+
+
 @app.route("/admin/export.geojson")
 @requires_admin
 def admin_export_geojson():
@@ -797,7 +1087,13 @@ def admin_map():
     otype = (request.args.get("type") or "").strip().lower()
     if otype not in TYPE_META:
         otype = next(iter(TYPE_META.keys()))
-    return render_template("admin_map.html", otype=otype, meta=TYPE_META[otype])
+    g.current_type = otype
+    return render_template(
+        "admin_map.html",
+        otype=otype,
+        meta=TYPE_META[otype],
+        banner_title=make_banner_title("Edit", "Map", TYPE_META[otype]["label"]),
+    )
 
 
 if __name__ == "__main__":

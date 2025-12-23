@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<link rel="stylesheet" href="{{ url_for('static', filename='styles/app.css') }}">
+<script defer src="{{ url_for('static', filename='js/app.js') }}"></script>
+<title>{{ meta.label }} {{ r['id'] }} · Images</title>
+<body>
+
+{% include "_banner.html" %}
+
+<div class="page">
+  <div class="card">
+    {% if thumbs %}
+      <div class="grid">
+        {% for t in thumbs %}
+          {% set i = loop.index0 %}
+          {% set href = (images[i] if images and (images|length > i) else t) %}
+          <div class="tile">
+            <a href="{{ url_for('serve_upload', fname=href) }}" target="_blank">
+              <img src="{{ url_for('serve_upload', fname=t) }}" alt="thumbnail">
+            </a>
+          </div>
+        {% endfor %}
+      </div>
+    {% elif images %}
+      <div class="grid">
+        {% for img in images %}
+          <div class="tile">
+            <a href="{{ url_for('serve_upload', fname=img) }}" target="_blank">
+              <img src="{{ url_for('serve_upload', fname=img) }}" alt="image">
+            </a>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="small">No images attached.</div>
+    {% endif %}
+
+    {% if images %}
+      <div class="small"><strong>Total images:</strong> {{ images|length }}</div>
+    {% endif %}
+  </div>
+</div>
+
+</body>
+</html>

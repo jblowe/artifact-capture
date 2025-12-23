@@ -1,0 +1,36 @@
+{# Shared navbar/banner. Variables are injected by app.py. #}
+<header class="app-banner"
+        style="--banner-bg: {{ BANNER_BG }};
+               --banner-fg: {{ BANNER_FG }};
+               --banner-accent: {{ BANNER_ACCENT }};">
+  <div class="banner-inner">
+
+    <!-- LEFT: Logo + Brand + Subtitle -->
+    <div class="brand">
+      {% if SHOW_LOGO %}
+        <img class="brand-logo"
+             src="{{ url_for('static', filename='images/' + APP_LOGO) }}"
+             alt="Logo">
+      {% endif %}
+
+      <div class="brand-text">
+        {% if APP_BRAND %}
+          <div class="brand-name">{{ APP_BRAND }}</div>
+        {% endif %}
+      </div>
+
+      <div class="page-title">
+          {% if banner_title %}
+            <div class="brand-subtitle">{{ banner_title }}</div>
+          {% endif %}
+      </div>
+    </div>
+
+    <nav class="navlinks" aria-label="Primary">
+      {% for item in NAV_LINKS %}
+        <a class="navlink {% if item.active %}active{% endif %}" href="{{ item.url }}">{{ item.label }}</a>
+      {% endfor %}
+    </nav>
+
+  </div>
+</header>
