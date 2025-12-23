@@ -371,5 +371,5 @@ body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;pad
 @media (max-width: 720px){
   .banner-inner{flex-wrap:wrap;}
   .page-title{order: 3; width:100%;}
-  .navlinks{width:100%; justify-content:flex-end; font-size: small;}
+  .navlinks{width:100%; justify-content:flex-end; font-size: x-small;}
 }
