@@ -438,6 +438,13 @@ def maps_links(lat, lon):
 app.jinja_env.globals["maps_links"] = maps_links
 app.jinja_env.filters["fromjson"] = lambda s: json.loads(s) if s else []
 
+@app.route("/favicon.ico")
+def favicon():
+    return send_from_directory(
+        app.static_folder,
+        "favicon.ico",
+        mimetype="image/vnd.microsoft.icon",
+    )
 
 @app.route("/", methods=["GET"])
 def form():

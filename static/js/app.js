@@ -2,6 +2,14 @@
 (function () {
   "use strict";
 
+// Expose close handler for inline onclick in upload.html
+  window.hideLastCard = function () {
+    const card = document.getElementById("lastCard");
+    if (card) card.style.display = "none";
+  };
+
+
+
   // ---- helpers ----
   function $(sel, root) { return (root || document).querySelector(sel); }
   function $all(sel, root) { return Array.from((root || document).querySelectorAll(sel)); }
