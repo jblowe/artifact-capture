@@ -156,7 +156,7 @@
             if (lonEl) lonEl.value = String(lon);
             if (accEl && Number.isFinite(acc)) accEl.value = String(acc);
             if (tsEl) tsEl.value = String(pos.timestamp || Date.now());
-            setStatus(`GPS OK: ${formatCoords(lat, lon)}${Number.isFinite(acc) ? " (±" + Math.round(acc) + "m)" : ""}`);
+            setStatus(`${formatCoords(lat, lon)}${Number.isFinite(acc) ? " (±" + Math.round(acc) + "m)" : ""}`);
           } else {
             clearFields();
             setStatus("GPS failed: invalid coordinates returned.");
