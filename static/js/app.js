@@ -2,6 +2,52 @@
 (function () {
   "use strict";
 
+  // Expose helpers for inline onclick handlers in templates.
+  // These must be on window because this file is wrapped in an IIFE.
+
+  window.requirePhoto = function (isRequired) {
+    // Toggle the 'required' attribute on the active form's photo input.
+    // Inline onclick runs before submit, so HTML5 validation can block submission.
+    try {
+      var panels = document.querySelectorAll(".type-panel");
+      var activePanel = null;
+      for (var i = 0; i < panels.length; i++) {
+        if (panels[i].offsetParent !== null) { activePanel = panels[i]; break; }
+      }
+      var scope = activePanel || document;
+      var photo = scope.querySelector('input[type="file"][name="photo"]');
+      if (photo) {
+        if (isRequired) photo.setAttribute("required", "required");
+        else photo.removeAttribute("required");
+      }
+    } catch (e) {}
+  };
+
+  window.resetForm = function (typeKey) {
+    try {
+      var panel = document.querySelector('.type-panel[data-type="' + typeKey + '"]');
+      if (!panel) return;
+      var form = panel.querySelector("form.captureForm");
+      if (!form) return;
+
+      form.reset();
+
+      // Clear GPS hidden fields (by name, IDs are dynamic)
+      var lat = panel.querySelector('input[name="gps_lat"]');
+      var lon = panel.querySelector('input[name="gps_lon"]');
+      var acc = panel.querySelector('input[name="gps_acc"]');
+      if (lat) lat.value = "";
+      if (lon) lon.value = "";
+      if (acc) acc.value = "";
+
+      // Restore GPS status text if present
+      var statusEl = panel.querySelector(".gps_status");
+      if (statusEl) statusEl.textContent = "Tap to capture location";
+    } catch (e) {}
+  };
+
+
+
 // Expose close handler for inline onclick in upload.html
   window.hideLastCard = function () {
     const card = document.getElementById("lastCard");

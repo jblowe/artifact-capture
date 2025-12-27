@@ -211,9 +211,10 @@ def inject_globals():
         'BANNER_FG': getattr(config, 'BANNER_FG', '#ffffff'),
         'BANNER_ACCENT': getattr(config, 'BANNER_ACCENT', '#60a5fa'),
         'SHOW_LOGO': getattr(config, 'SHOW_LOGO', True),
-
         'NAV_LINKS': nav_links,
-    }
+        # Default banner subtitle: current object type (overridden by routes that pass banner_title)
+        'banner_title': make_banner_title(ct.capitalize()) if ct else '',
+   }
 
 
 app.jinja_env.globals["GPS_ENABLED"] = GPS_ENABLED
