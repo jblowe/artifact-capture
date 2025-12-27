@@ -466,7 +466,7 @@ def form():
     return render_template("upload.html",
                            last_row=last_row, last_type=last_type, last_meta=last_meta,
                            selected_type=selected,
-                           banner_title=make_banner_title('Capture'))
+                           banner_title=make_banner_title(selected.capitalize()))
 
 
 @app.route("/submit", methods=["POST"])

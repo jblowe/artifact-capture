@@ -24,6 +24,32 @@ BANNER_ACCENT = '#60a5fa'  # active link underline/accent
 GPS_ENABLED = True
 
 object_types = {
+
+    'photograps':
+        {'label': 'Photographs',
+         'input_fields': [
+             ('Photographer', 'photographer', 'TEXT',
+              'DROPDOWN("joyce", "elizabeth", "suliya", "nitaxay", "pengborn", "jb", "other")'),
+             ('Site Name', 'site_name', 'TEXT'),
+             ('Shot type', 'shot_type', 'TEXT',
+              'DROPDOWN( "general view", "feature at site", "environment", "artifacts", "miscellaneous", "action/process", "studio bag", "studio artifact", "people at site", "lab views")'),
+             ('Comments', 'comments', 'TEXT'),
+             ('Date recorded', 'date_recorded', 'TIMESTAMP'),
+         ],
+         'layout_rows': [
+             ['photographer'],
+             ['site_name'],
+             ['shot_type'],
+             ['comments'],
+             ['date_recorded'],
+         ],
+         'required_fields': (
+             'photographer',
+             'site_name',
+             'shot_type',
+         )
+         },
+
     'artifacts':
         {'label': 'Artifacts',
          'input_fields': [
