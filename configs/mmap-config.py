@@ -25,7 +25,7 @@ GPS_ENABLED = True
 
 object_types = {
 
-    'photograps':
+    'photographs':
         {'label': 'Photographs',
          'input_fields': [
              ('Photographer', 'photographer', 'TEXT',
