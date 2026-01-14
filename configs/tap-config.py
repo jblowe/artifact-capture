@@ -112,7 +112,6 @@ object_types = {
              ['season', 'tnumber'],
              ['excavation_unit', 'area', 'level'],
              ['excavation_date'],
-             ['tnumber'],
              ['surface_treatment'],
              ['temper'],
              ['typology_number'],
