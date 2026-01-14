@@ -84,17 +84,22 @@
 
                           </div>
                         </td>
+                      {% else %}
+                        <td>
+                          <div class="field">
+                            <label class="form-label">{{ col }}</label>
+                            {% if col in ['notes','description'] %}
+                              <textarea name="{{ col }}" rows="3">{{ r[col] or '' }}</textarea>
+                            {% else %}
+                              <input type="text" name="{{ col }}" value="{{ r[col] if r[col] is not none else '' }}">
+                            {% endif %}
+                          </div>
+                        </td>
                       {% endif %}
                     {% endfor %}
                   </tr>
                 {% endfor %}
               </table>
-                        </div>
-                      {% elif fm.widget == 'dropdown' and fm.options %}
-                        <select name="{{ col }}">
-                          <option value=""></option>
-                          {% for opt in fm.options %}
-                            <option value="{{ opt }}" {% if ((r[col] or '') == opt) %}selected{% endif %}>{{ opt }}</option>
                           {% endfor %}
                         </select>
                       {% elif col in ['notes','description'] %}
@@ -152,7 +157,7 @@
           {% endif %}
 
           <div class="small"><strong>Images:</strong> {{ images|length }}</div>
-          {% if r['gps_lat'] and r['gps_lon'] %}
+          {% if GPS_ENABLED and r['gps_lat'] and r['gps_lon'] %}
             <div class="small"><strong>GPS:</strong> {{ '%.6f'|format(r['gps_lat']) }}, {{ '%.6f'|format(r['gps_lon']) }}</div>
           {% endif %}
           {% if jfiles %}

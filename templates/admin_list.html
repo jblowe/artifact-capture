@@ -12,96 +12,199 @@
 
   <div class="tabs">
     {% for k, m in OBJECT_TYPES.items() %}
-      <a class="tab {% if k == otype %}active{% endif %}" href="{{ url_for('admin_list', type=k) }}">{{ m.label }}</a>
+      <a class="tab {% if k == otype %}active{% endif %}" href="{{ url_for('admin_list', type=k, view=view, per_page=per_page, q=q) }}">{{ m.label }}</a>
     {% endfor %}
   </div>
 
   <div class="bar">
-    <form method="get" style="display:flex;gap:.5rem;flex:1 1 auto;align-items:center;">
+    <form method="get" style="display:flex;gap:.5rem;flex:1 1 auto;align-items:center;flex-wrap:wrap;">
       <input type="hidden" name="type" value="{{ otype }}">
+      <input type="hidden" name="view" value="{{ view }}">
+      <input type="hidden" name="page" value="1">
       <input type="search" name="q" placeholder="Search text fields" value="{{ q or '' }}">
+      <select name="per_page" onchange="this.form.submit()">
+        {% for n in [10,25,50,100,200] %}
+          <option value="{{ n }}" {% if per_page == n %}selected{% endif %}>{{ n }}/page</option>
+        {% endfor %}
+      </select>
       <a class="btn" href="{{ url_for('admin_export_csv', type=otype) }}">CSV</a>
       <a class="btn" href="{{ url_for('admin_export_geojson', type=otype) }}">GeoJSON</a>
-      <a class="btn" href="{{ url_for('admin_map', type=otype) }}">Map</a>
+      {% if GPS_ENABLED %}
+        <a class="btn" href="{{ url_for('admin_map', type=otype) }}">Map</a>
+      {% endif %}
     </form>
+
+    <div style="display:flex;gap:.4rem;align-items:center;flex:0 0 auto;">
+      <span class="small">View:</span>
+      <a class="btn {% if view=='para' %}primary{% endif %}" href="{{ url_for('admin_list', type=otype, q=q, per_page=per_page, page=page, view='para') }}">Paragraph</a>
+      <a class="btn {% if view=='table' %}primary{% endif %}" href="{{ url_for('admin_list', type=otype, q=q, per_page=per_page, page=page, view='table') }}">Table</a>
+    </div>
   </div>
 
-  <table>
-    <thead>
-      <tr>
-        <th>ID</th><th>Img</th><th>Metadata</th><th>GPS</th><th>Files</th><th>Actions</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for r in rows %}
-      {% set thumbs = (r['thumbs_json']|fromjson) %}
-      {% set images = (r['images_json']|fromjson) %}
-      {% set jfiles = (r['json_files_json']|fromjson) %}
-      <tr>
-        <td>{{ r['id'] }}</td>
-        <td>
-          {% if thumbs %}
-            {% set total = thumbs|length %}
-            {% set show = thumbs[(total-3) if total>3 else 0:] %}
-            {% set start = total - (show|length) %}
-            <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">
-              {% for t in show %}
-                {% set i = start + loop.index0 %}
-                {% if images and (images|length > i) and images[i] %}
-                  {% set href = url_for('serve_upload', fname=images[i]) %}
-                {% else %}
-                  {% set href = url_for('serve_upload', fname=t) %}
-                {% endif %}
-                <a href="{{ href }}" target="_blank"><img class="thumb" src="{{ url_for('serve_upload', fname=t) }}" alt=""></a>
-              {% endfor %}
-            </div>
-          {% elif images %}
-            <a href="{{ url_for('serve_upload', fname=images[-1]) }}" target="_blank"><img class="thumb" src="{{ url_for('serve_upload', fname=images[-1]) }}" alt=""></a>
-          {% endif %}
-          {% if images %}<div class="small">× {{ images|length }}</div>{% endif %}
-        </td>
-        <td class="small">
-          {% if r['date_updated'] %}<strong>Date recorded:</strong> {{ r['date_updated'] }}<br>{% endif %}
-          {% for f in meta.display_fields %}            {% set label = f[0] %}
-            {% set col = f[1] %}
-            {% if col != 'date_updated' and r[col] %}
-              <strong>{{ label }}:</strong> {{ r[col] }}<br>
-            {% endif %}
+  <div class="bar" style="justify-content:space-between;">
+    <div class="small">
+      {{ total }} record(s){% if q %} matching “{{ q }}”{% endif %}.
+    </div>
+    <div style="display:flex;gap:.35rem;align-items:center;flex-wrap:wrap;">
+      {% set prev_page = page-1 %}
+      {% set next_page = page+1 %}
+      <span class="small">Page {{ page }} of {{ total_pages }}</span>
+
+      <a class="btn {% if page <= 1 %}disabled{% endif %}"
+         href="{% if page>1 %}{{ url_for('admin_list', type=otype, q=q, per_page=per_page, page=prev_page, view=view) }}{% else %}#{% endif %}">Prev</a>
+
+      <a class="btn {% if page >= total_pages %}disabled{% endif %}"
+         href="{% if page<total_pages %}{{ url_for('admin_list', type=otype, q=q, per_page=per_page, page=next_page, view=view) }}{% else %}#{% endif %}">Next</a>
+    </div>
+  </div>
+
+  {% if view == 'table' %}
+    {# Tabular mode: show a column per configured result field. Click headers to sort client-side. #}
+    <table data-sortable="1">
+      <thead>
+        <tr>
+          <th data-sortkey="id">ID</th>
+          <th data-sortkey="images">Img</th>
+          {% for col in meta.result_fields %}
+            <th data-sortkey="{{ col }}">{{ meta.field_meta[col].label }}</th>
           {% endfor %}
-          <span>{{ r['exif_datetime'] or '' }} {{ r['exif_make'] or '' }} {{ r['exif_model'] or '' }}</span>
-        </td>
-        <td class="small">
-          {% if r['gps_lat'] and r['gps_lon'] %}
-            {{ "%.6f"|format(r['gps_lat']) }}, {{ "%.6f"|format(r['gps_lon']) }}<br>
-            {% set osm, gmaps = maps_links(r['gps_lat'], r['gps_lon']) %}
-            <a class="btn" href="{{ osm }}" target="_blank">OSM</a>
-            <a class="btn" href="{{ gmaps }}" target="_blank">Maps</a>
-          {% else %}
-            —
-          {% endif %}
-        </td>
-        <td class="small">
-          {% if images %}
-            {% if images|length == 1 %}
-              <a class="btn" href="{{ url_for('serve_upload', fname=images[0]) }}" target="_blank">JPEG</a>
-            {% else %}
-              <a class="btn" href="{{ url_for('admin_record_images', otype=otype, aid=r['id']) }}" target="_blank">JPEG</a>
+          <th data-sortkey="files">Files</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+          {% set thumbs = (r['thumbs_json']|fromjson) %}
+          {% set images = (r['images_json']|fromjson) %}
+          {% set jfiles = (r['json_files_json']|fromjson) %}
+          <tr>
+            <td>{{ r['id'] }}</td>
+            <td class="small">
+              {% if thumbs %}
+                <a href="{{ url_for('serve_upload', fname=(images[-1] if images else thumbs[-1])) }}" target="_blank">
+                  <img class="thumb" src="{{ url_for('serve_upload', fname=thumbs[-1]) }}" alt="">
+                </a>
+              {% elif images %}
+                <a href="{{ url_for('serve_upload', fname=images[-1]) }}" target="_blank">
+                  <img class="thumb" src="{{ url_for('serve_upload', fname=images[-1]) }}" alt="">
+                </a>
+              {% endif %}
+              {% if images %}<div class="small">× {{ images|length }}</div>{% endif %}
+            </td>
+            {% for col in meta.result_fields %}
+              <td class="small">{{ r[col] if r[col] is not none else '' }}</td>
+            {% endfor %}
+            <td class="small">
+              {% if images %}
+                {% if images|length == 1 %}
+                  <a class="btn" href="{{ url_for('serve_upload', fname=images[0]) }}" target="_blank">JPEG</a>
+                {% else %}
+                  <a class="btn" href="{{ url_for('admin_record_images', otype=otype, aid=r['id']) }}" target="_blank">JPEG</a>
+                {% endif %}
+              {% endif %}
+              {% set webps = (r['webps_json']|fromjson) %}
+              {% if webps %}<a class="btn" href="{{ url_for('serve_upload', fname=webps[-1]) }}" target="_blank">WebP</a>{% endif %}
+              {% if jfiles %}<a class="btn" href="{{ url_for('admin_record_json', otype=otype, aid=r['id']) }}" target="_blank">JSON</a>{% endif %}
+            </td>
+            <td class="small">
+              <a class="btn" href="{{ url_for('admin_edit', otype=otype, aid=r['id']) }}">Edit</a>
+              <form class="inline" action="{{ url_for('admin_delete', otype=otype, aid=r['id']) }}" method="post" onsubmit="return confirm('Delete {{ meta.label }} {{ r['id'] }}?')">
+                <button class="btn" type="submit">Delete</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="small" style="margin-top:.6rem;">
+      Tip: click a column header to sort (client-side).
+    </div>
+
+  {% else %}
+    {# Paragraph mode: existing compact summary per record (default). #}
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th><th>Img</th><th>Metadata</th>
+          {% if GPS_ENABLED %}<th>GPS</th>{% endif %}
+          <th>Files</th><th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        {% set thumbs = (r['thumbs_json']|fromjson) %}
+        {% set images = (r['images_json']|fromjson) %}
+        {% set jfiles = (r['json_files_json']|fromjson) %}
+        <tr>
+          <td>{{ r['id'] }}</td>
+          <td>
+            {% if thumbs %}
+              {% set total = thumbs|length %}
+              {% set show = thumbs[(total-3) if total>3 else 0:] %}
+              {% set start = total - (show|length) %}
+              <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">
+                {% for t in show %}
+                  {% set i = start + loop.index0 %}
+                  {% if images and (images|length > i) and images[i] %}
+                    {% set href = url_for('serve_upload', fname=images[i]) %}
+                  {% else %}
+                    {% set href = url_for('serve_upload', fname=t) %}
+                  {% endif %}
+                  <a href="{{ href }}" target="_blank"><img class="thumb" src="{{ url_for('serve_upload', fname=t) }}" alt=""></a>
+                {% endfor %}
+              </div>
+            {% elif images %}
+              <a href="{{ url_for('serve_upload', fname=images[-1]) }}" target="_blank"><img class="thumb" src="{{ url_for('serve_upload', fname=images[-1]) }}" alt=""></a>
             {% endif %}
+            {% if images %}<div class="small">× {{ images|length }}</div>{% endif %}
+          </td>
+          <td class="small">
+            {% if r['date_updated'] %}<strong>Date recorded:</strong> {{ r['date_updated'] }}<br>{% endif %}
+            {% for f in meta.display_fields %}
+              {% set label = f[0] %}
+              {% set col = f[1] %}
+              {% if col != 'date_updated' and r[col] %}
+                <strong>{{ label }}:</strong> {{ r[col] }}<br>
+              {% endif %}
+            {% endfor %}
+            <span>{{ r['exif_datetime'] or '' }} {{ r['exif_make'] or '' }} {{ r['exif_model'] or '' }}</span>
+          </td>
+          {% if GPS_ENABLED %}
+          <td class="small">
+            {% if r['gps_lat'] and r['gps_lon'] %}
+              {{ "%.6f"|format(r['gps_lat']) }}, {{ "%.6f"|format(r['gps_lon']) }}<br>
+              {% set osm, gmaps = maps_links(r['gps_lat'], r['gps_lon']) %}
+              <a class="btn" href="{{ osm }}" target="_blank">OSM</a>
+              <a class="btn" href="{{ gmaps }}" target="_blank">Maps</a>
+            {% else %}
+              —
+            {% endif %}
+          </td>
           {% endif %}
-          {% set webps = (r['webps_json']|fromjson) %}
-          {% if webps %}<a class="btn" href="{{ url_for('serve_upload', fname=webps[-1]) }}" target="_blank">WebP</a>{% endif %}
-          {% if jfiles %}<a class="btn" href="{{ url_for('admin_record_json', otype=otype, aid=r['id']) }}" target="_blank">JSON</a>{% endif %}
-        </td>
-        <td class="small">
-          <a class="btn" href="{{ url_for('admin_edit', otype=otype, aid=r['id']) }}">Edit</a>
-          <form class="inline" action="{{ url_for('admin_delete', otype=otype, aid=r['id']) }}" method="post" onsubmit="return confirm('Delete {{ meta.label }} {{ r['id'] }}?')">
-            <button class="btn" type="submit">Delete</button>
-          </form>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+          <td class="small">
+            {% if images %}
+              {% if images|length == 1 %}
+                <a class="btn" href="{{ url_for('serve_upload', fname=images[0]) }}" target="_blank">JPEG</a>
+              {% else %}
+                <a class="btn" href="{{ url_for('admin_record_images', otype=otype, aid=r['id']) }}" target="_blank">JPEG</a>
+              {% endif %}
+            {% endif %}
+            {% set webps = (r['webps_json']|fromjson) %}
+            {% if webps %}<a class="btn" href="{{ url_for('serve_upload', fname=webps[-1]) }}" target="_blank">WebP</a>{% endif %}
+            {% if jfiles %}<a class="btn" href="{{ url_for('admin_record_json', otype=otype, aid=r['id']) }}" target="_blank">JSON</a>{% endif %}
+          </td>
+          <td class="small">
+            <a class="btn" href="{{ url_for('admin_edit', otype=otype, aid=r['id']) }}">Edit</a>
+            <form class="inline" action="{{ url_for('admin_delete', otype=otype, aid=r['id']) }}" method="post" onsubmit="return confirm('Delete {{ meta.label }} {{ r['id'] }}?')">
+              <button class="btn" type="submit">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
 </div>
 </body>
 </html>

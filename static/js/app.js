@@ -338,9 +338,69 @@
     }[c]));
   }
 
+  // ---- simple sortable tables (client-side) ----
+  function initSortableTables() {
+    const tables = $all("table[data-sortable='1']");
+    if (!tables.length) return;
+
+    function getCellValue(td) {
+      if (!td) return "";
+      const v = (td.getAttribute("data-sort") || td.textContent || "").trim();
+      return v;
+    }
+
+    function isNumeric(val) {
+      if (val === "") return false;
+      return !isNaN(val) && isFinite(val);
+    }
+
+    tables.forEach((table) => {
+      const thead = table.querySelector("thead");
+      const tbody = table.querySelector("tbody");
+      if (!thead || !tbody) return;
+
+      const ths = Array.from(thead.querySelectorAll("th"));
+      ths.forEach((th, idx) => {
+        // Skip action columns (no sortkey)
+        if (!th.getAttribute("data-sortkey")) return;
+
+        th.style.cursor = "pointer";
+        th.title = "Click to sort";
+
+        th.addEventListener("click", () => {
+          const current = th.getAttribute("data-sortdir") || "none";
+          const dir = current === "asc" ? "desc" : "asc";
+
+          // reset others
+          ths.forEach((o) => { if (o !== th) o.removeAttribute("data-sortdir"); });
+          th.setAttribute("data-sortdir", dir);
+
+          const rows = Array.from(tbody.querySelectorAll("tr"));
+          rows.sort((a, b) => {
+            const av = getCellValue(a.children[idx]);
+            const bv = getCellValue(b.children[idx]);
+
+            const an = isNumeric(av) ? parseFloat(av) : null;
+            const bn = isNumeric(bv) ? parseFloat(bv) : null;
+
+            let cmp;
+            if (an !== null && bn !== null) cmp = an - bn;
+            else cmp = av.localeCompare(bv, undefined, { numeric: true, sensitivity: "base" });
+
+            return dir === "asc" ? cmp : -cmp;
+          });
+
+          // Re-append in new order
+          rows.forEach((r) => tbody.appendChild(r));
+        });
+      });
+    });
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     initFormPersistence();
     initAdminMap();
-      initGPSCapture();
-});
+    initGPSCapture();
+    initSortableTables();
+  });
 })();

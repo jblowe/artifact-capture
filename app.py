@@ -1120,27 +1120,63 @@ def admin_list():
         otype = next(iter(TYPE_META.keys()))
     g.current_type = otype
     meta = TYPE_META[otype]
+
     q = request.args.get("q", "").strip()
-    sql = f"SELECT * FROM {otype}"
+    view = (request.args.get("view") or "para").strip().lower()
+    if view not in ("para", "table"):
+        view = "para"
+
+    # Pagination
+    try:
+        page = int(request.args.get("page", "1"))
+    except ValueError:
+        page = 1
+    page = max(page, 1)
+
+    try:
+        per_page = int(request.args.get("per_page", "50"))
+    except ValueError:
+        per_page = 50
+    # Keep bounds reasonable
+    per_page = max(10, min(per_page, 200))
+
+    base_sql = f"FROM {otype}"
     params = []
     if q:
-        text_cols = [f[1] for f in meta["input_fields"] if (f[2] or "").upper().startswith("TEXT")]
+        text_cols = [f[1] for f in meta["input_fields"] if (str(f[2] or "")).upper().startswith("TEXT")]
         if text_cols:
             where_clauses = [f"{c} LIKE ?" for c in text_cols]
-            sql += " WHERE " + " OR ".join(where_clauses)
+            base_sql += " WHERE " + " OR ".join(where_clauses)
             like = f"%{q}%"
             params = [like] * len(text_cols)
-    sql += " ORDER BY id DESC LIMIT 500"
+
     with get_db() as conn:
-        rows = conn.execute(sql, params).fetchall()
+        total = conn.execute(f"SELECT COUNT(*) {base_sql}", params).fetchone()[0]
+        total_pages = max(1, (total + per_page - 1) // per_page)
+        if page > total_pages:
+            page = total_pages
+        offset = (page - 1) * per_page
+
+        rows = conn.execute(
+            f"SELECT * {base_sql} ORDER BY id DESC LIMIT ? OFFSET ?",
+            params + [per_page, offset],
+        ).fetchall()
+
     return render_template(
         "admin_list.html",
         rows=rows,
         q=q,
+        view=view,
+        page=page,
+        per_page=per_page,
+        total=total,
+        total_pages=total_pages,
         otype=otype,
         meta=meta,
         banner_title=make_banner_title("Edit", meta["label"]),
     )
+
+
 
 
 @app.route("/admin/edit/<otype>/<int:aid>", methods=["GET", "POST"])
@@ -1410,6 +1446,9 @@ def admin_export_geojson():
 @app.route("/admin/map")
 @requires_admin
 def admin_map():
+    if not GPS_ENABLED:
+        flash("GPS is disabled; map view is unavailable.")
+        return redirect(url_for("admin_list", type=_get_current_type()))
     otype = (request.args.get("type") or "").strip().lower()
     if otype not in TYPE_META:
         otype = next(iter(TYPE_META.keys()))
@@ -1420,6 +1459,9 @@ def admin_map():
         meta=TYPE_META[otype],
         banner_title=make_banner_title("Edit", "Map", TYPE_META[otype]["label"]),
     )
+
+
+
 
 
 if __name__ == "__main__":

@@ -10,18 +10,18 @@
 {% include "_banner.html" %}
 <div class="page">
 
-
   <div class="tabs">
     {% for k, m in OBJECT_TYPES.items() %}
       <a class="tab {% if k == otype %}active{% endif %}" href="{{ url_for('recent', type=k) }}">{{ m.label }}</a>
     {% endfor %}
   </div>
 
-
   <table>
     <thead>
       <tr>
-        <th>ID</th><th>Image</th><th>Fields</th><th>GPS</th><th>Files</th>
+        <th>ID</th><th>Image</th><th>Fields</th>
+        {% if GPS_ENABLED %}<th>GPS</th>{% endif %}
+        <th>Files</th>
       </tr>
     </thead>
     <tbody>
@@ -59,18 +59,18 @@
             {% for row in meta.result_rows %}
               <tr>
                 {% for col in row %}
-                  {% if True %}
-                    <td class="small">
-                      {% if r[col] %}
-                        <strong>{{ meta.field_meta[col].label }}:</strong> {{ r[col] }}
-                      {% endif %}
-                    </td>
-                  {% endif %}
+                  <td class="small">
+                    {% if r[col] %}
+                      <strong>{{ meta.field_meta[col].label }}:</strong> {{ r[col] }}
+                    {% endif %}
+                  </td>
                 {% endfor %}
               </tr>
             {% endfor %}
           </table>
         </td>
+
+        {% if GPS_ENABLED %}
         <td class="small">
           {% if r['gps_lat'] and r['gps_lon'] %}
             {{ "%.6f"|format(r['gps_lat']) }}, {{ "%.6f"|format(r['gps_lon']) }}<br>
@@ -81,6 +81,8 @@
             —
           {% endif %}
         </td>
+        {% endif %}
+
         <td class="small">
           {% if images %}
             {% if images|length == 1 %}
