@@ -15,7 +15,7 @@ APP_SUBTITLE = ''  # optional, shown smaller in the banner
 APP_LOGO = 'mmap-logo-pot-and-river-small.png'
 SHOW_LOGO = True  # displays logo
 ADMIN_LABEL = 'Admin'  # label used in admin page titles
-FILENAME_PREFIX = 'MMAP'  # prefix used for generated filenames
+DATE_FORMAT = '%Y-%m-%d'  # storage format for DATE fields
 
 BANNER_BG = '#f9d88d'  # navbar background
 BANNER_FG = '#000000'  # navbar text
@@ -52,6 +52,7 @@ object_types = {
 
     'artifacts':
         {'label': 'Artifacts',
+         'filename_format': 'ARTIFACT_{unit}_{tnum}_{lot}_{area}_{level}_ID{record_id}',
          'input_fields': [
              ('Recorders', 'recorders', 'TEXT',
               'DROPDOWN("jw", "eh", "jbl", "xx")'),
@@ -102,6 +103,7 @@ object_types = {
 
     'sites':
         {'label': 'Sites',
+         'filename_format': 'SITE_{village}_{site}_ID{record_id}',
          'input_fields': [
              ('Date recorded', 'date_recorded', 'TIMESTAMP'),
              ('Site name', 'site_name', 'TEXT'),

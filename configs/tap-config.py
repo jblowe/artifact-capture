@@ -13,26 +13,38 @@ APP_BRAND = 'TAP'
 APP_SUBTITLE = ''  # optional, shown smaller in the banner
 APP_LOGO = 'tap-logo-small-v2.png'
 ADMIN_LABEL = 'Admin'  # label used in admin page titles
-FILENAME_PREFIX = 'TAP'  # prefix used for generated filenames
+DATE_FORMAT = '%Y-%m-%d'  # storage format for DATE fields
 
 BANNER_BG = '#A51931'  # navbar background
 BANNER_FG = '#ffffff'  # navbar text
 BANNER_ACCENT = '#60a5fa'  # active link underline/accent
 SHOW_LOGO = True  # looks for static/images/logo.svg
 
-RECORDERS = "DROPDOWN('jb', 'karen', 'mapan', 'nic', 'pai', 'susan', 'toey', 'vince')"
+RECORDERS = "RADIO('JB', 'Karen', 'Maprang', 'Nick', 'Non', 'Phai', 'Susan', 'Toey', 'Vince')"
+SEASON = ('Season', 'season', 'TEXT',
+          "DROPDOWN('TAP 86', 'TAP 90', 'TAP 92', 'TAP 94')")
+
+# ('Excavation Unit', 'excavation_unit', 'TEXT',
+#  # 'DROPDOWN('Op1', 'Op2', 'Op3', 'Op4', 'Op5', 'Op6', 'Op7', 'Op8', 'Op9', 'Op10', 'SqA', 'SqB', 'SqC')'),
+#  "DROPDOWN('SqA', 'SqC', 'Op1')"),
+# ('T-Number', 'tnumber', 'TEXT'),
+# ('Area', 'area', 'TEXT'),
+# ('Level', 'level', 'TEXT'),
 
 object_types = {
 
     'bags':
-        {'label': 'Bag',
+        {'label': 'Bags',
          'input_fields': [
-             ('Season', 'season', 'TEXT',
-              "DROPDOWN('TAP 86', 'TAP 90', 'TAP 92', 'TAP 94')"),
+             SEASON,
              ('Recorders', 'recorders', 'TEXT', RECORDERS),
              ('T-Number', 'tnumber', 'TEXT'),
              ('Context', 'context', 'TEXT'),
-             ('Date recorded', 'date_recorded', 'TIMESTAMP'),
+             ('Excavation Unit', 'excavation_unit', 'TEXT',
+              "DROPDOWN('SqA', 'SqC', 'Op1')"),
+             ('Area', 'area', 'TEXT'),
+             ('Level', 'level', 'TEXT'),
+             ('Date recorded', 'date_recorded', 'DATE'),
              ('Notes', 'notes', 'TEXT'),
          ],
          'layout_rows': [
@@ -41,6 +53,13 @@ object_types = {
              ['tnumber'],
              ['context'],
              ['date_recorded'],
+             ['notes'],
+         ],
+         'result_rows': [
+             ['recorders'],
+             ['season', 'tnumber'],
+             ['excavation_unit', 'area', 'level'],
+             ['context', 'date_recorded'],
              ['notes'],
          ],
          'required_fields': (
@@ -52,14 +71,14 @@ object_types = {
          },
 
     'artifacts':
-        {'label': 'Artifact',
+        {'label': 'Artifacts',
          'input_fields': [
              ('Recorders', 'recorders', 'TEXT', RECORDERS),
-             ('Date recorded', 'date_recorded', 'TIMESTAMP'),
-             ('Excavation Unit', 'excavation_unit', 'TEXT',
-              # 'DROPDOWN('Op1', 'Op2', 'Op3', 'Op4', 'Op5', 'Op6', 'Op7', 'Op8', 'Op9', 'Op10', 'SqA', 'SqB', 'SqC')'),
-              "DROPDOWN('SqA', 'SqC', 'Op1')"),
+             SEASON,
              ('T-Number', 'tnumber', 'TEXT'),
+             ('Context', 'context', 'TEXT'),
+             ('Excavation Unit', 'excavation_unit', 'TEXT',
+              "DROPDOWN('SqA', 'SqC', 'Op1')"),
              ('Area', 'area', 'TEXT'),
              ('Level', 'level', 'TEXT'),
              ('Excavation Date', 'excavation_date', 'DATE'),
@@ -76,9 +95,22 @@ object_types = {
          ],
          'layout_rows': [
              ['recorders'],
-             ['excavation_unit'],
-             ['area'],
-             ['level'],
+             ['season'],
+             ['context'],
+             ['tnumber'],
+             ['excavation_date'],
+             ['surface_treatment'],
+             ['temper'],
+             ['typology_number'],
+             # ['munsell_color'],
+             ['collar_height'],
+             ['rim_diameter'],
+             ['notes'],
+         ],
+         'result_rows': [
+             ['recorders'],
+             ['season', 'tnumber'],
+             ['excavation_unit', 'area', 'level'],
              ['excavation_date'],
              ['tnumber'],
              ['surface_treatment'],
@@ -90,29 +122,32 @@ object_types = {
              ['notes'],
          ],
          'required_fields': (
-             'excavation_unit',
+             'season',
              'tnumber',
-             'area',
-             'level',
+             'context',
+             'excavation_date',
          )
          },
 
     'photographs':
-        {'label': 'Photograph',
+        {'label': 'Photographs',
          'input_fields': [
              ('Photographer', 'photographer', 'TEXT', RECORDERS),
+             SEASON,
              ('Site Name', 'site_name', 'TEXT'),
              ('Shot type', 'shot_type', 'TEXT'),
              ('Date recorded', 'date_recorded', 'TIMESTAMP'),
          ],
          'layout_rows': [
              ['photographer'],
+             ['season'],
              ['site_name'],
              ['comments'],
              ['date_recorded'],
          ],
          'required_fields': (
              'photographer',
+             'season',
              'site_name',
              'shot_type',
          )
