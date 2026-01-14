@@ -1,11 +1,11 @@
 from flask import (
     Flask, render_template, request, redirect, url_for,
-    flash, Response, send_from_directory, jsonify, g
+    flash, Response, send_from_directory, jsonify, g, session
 )
 from pathlib import Path
 from functools import wraps
 from io import BytesIO
-import sqlite3, time, os, base64, json, ast
+import sqlite3, time, os, base64, json, ast, re
 
 from PIL import Image, ImageOps, ExifTags
 
@@ -32,7 +32,8 @@ APP_BRAND = getattr(app_config, 'APP_BRAND', 'Artifact Capture')
 APP_SUBTITLE = getattr(app_config, 'APP_SUBTITLE', '')
 APP_LOGO = getattr(app_config, 'APP_LOGO', 'logo.svg')
 ADMIN_LABEL = getattr(app_config, 'ADMIN_LABEL', 'Admin')
-FILENAME_PREFIX = getattr(app_config, 'FILENAME_PREFIX', 'CAPTURE')
+DATE_FORMAT = getattr(app_config, 'DATE_FORMAT', '%Y-%m-%d')
+TIMESTAMP_FORMAT = getattr(app_config, 'TIMESTAMP_FORMAT', DATE_FORMAT + 'T%H:%M:%S')
 
 APP_ROOT = Path(__file__).parent.resolve()
 
@@ -85,20 +86,33 @@ def _parse_widget(widget_raw: str):
 
     Supports:
       - DROPDOWN('A','B',...)
+      - RADIO('A','B',...)   # rendered as a multi-select checkbox group (0+ selections)
     """
     widget_raw = widget_raw or ""
-    if isinstance(widget_raw, str) and widget_raw.upper().startswith("DROPDOWN"):
-        try:
-            start = widget_raw.index("(")
-            inside = widget_raw[start:]
-            vals = ast.literal_eval(inside)
-            if isinstance(vals, (list, tuple)):
-                return "dropdown", [str(v) for v in vals]
-            return "dropdown", [str(vals)]
-        except Exception:
-            print(f"[FATAL] Could not parse widget spec {widget_raw!r} in config.py")
-            raise
-    return "auto", None
+    if not isinstance(widget_raw, str):
+        return "auto", None
+
+    up = widget_raw.strip().upper()
+    if up.startswith("DROPDOWN"):
+        kind = "dropdown"
+    elif up.startswith("RADIO"):
+        kind = "radio"
+    else:
+        return "auto", None
+
+    try:
+        start = widget_raw.index("(")
+        inside = widget_raw[start:]
+        vals = ast.literal_eval(inside)
+        if isinstance(vals, (list, tuple)):
+            options = [str(v) for v in vals]
+        else:
+            options = [str(vals)]
+        return kind, options
+    except Exception:
+        print(f"[FATAL] Could not parse widget spec {widget_raw!r} in config.py")
+        raise
+
 
 
 # Normalize and validate object_types config.
@@ -107,42 +121,89 @@ if not isinstance(OBJECT_TYPES, dict) or not OBJECT_TYPES:
     raise RuntimeError("config.py must define a non-empty dict named object_types")
 
 TYPE_META = {}
+
+# Columns that are managed by the server and should not be treated like
+# user-configured input fields (e.g., to avoid duplicate display).
+SYSTEM_COLUMNS = {"id", "gps_lat", "gps_lon", "gps_acc", "thumbs_json", "images_json", "json_files_json"}
+
 for otype, cfg in OBJECT_TYPES.items():
     if not isinstance(cfg, dict):
         raise RuntimeError(f"object_types[{otype!r}] must be a dict")
     label = cfg.get("label") or otype.title()
     input_fields = cfg.get("input_fields") or []
     layout_rows = cfg.get("layout_rows") or []
-    required_fields = tuple(cfg.get("required_fields") or ())
+    result_rows = cfg.get("result_rows") or []  # layout for Recent/Edit results
+    # Required fields should only refer to user-configured columns.
+    required_fields = tuple([c for c in (cfg.get("required_fields") or ()) if c not in SYSTEM_COLUMNS])
+    filename_format = cfg.get("filename_format") or cfg.get("filename_format")
     if not input_fields:
         raise RuntimeError(f"object_types[{otype!r}] has no input_fields")
 
     field_meta = {}
     for f in input_fields:
-        flabel, col, sql_type = f[0], f[1], f[2]
-        widget_raw = f[3] if len(f) > 3 else ""
-        widget, options = _parse_widget(widget_raw)
+        flabel, col, sql_type = f[0], f[1], (f[2] if len(f) > 2 else "TEXT")
+        sql_type_str = str(sql_type or "TEXT")
+        st_up = sql_type_str.strip().upper()
+
+        constant_value = None
+        if st_up == "CONSTANT":
+            # A CONSTANT field is rendered read-only with a fixed value, and stored as TEXT in SQLite.
+            widget = "constant"
+            options = None
+            constant_value = str(f[3]) if len(f) > 3 else ""
+            sqlite_type = "TEXT"
+        else:
+            widget_raw = f[3] if len(f) > 3 else ""
+            widget, options = _parse_widget(widget_raw)
+            sqlite_type = sql_type_str
+
         field_meta[col] = {
             "label": flabel,
             "col": col,
-            "sql_type": sql_type,
+            "sql_type": sql_type_str,      # for UI decisions
+            "sqlite_type": sqlite_type,    # for schema creation
             "widget": widget,
             "options": options,
+            "constant_value": constant_value,
             "required": col in required_fields,
         }
+
+
+    # result_rows controls which fields appear (and how they are arranged) in Recent and Edit views.
+    # If not provided, we fall back to layout_rows; if still empty, show one field per row.
+    result_rows_effective = result_rows or layout_rows or [[f[1]] for f in input_fields if (len(f) > 1 and f[1] not in SYSTEM_COLUMNS)]
+    cleaned = []
+    for row in (result_rows_effective or []):
+        cols = []
+        for col in (row or []):
+            if col in field_meta and col not in SYSTEM_COLUMNS:
+                cols.append(col)
+        if cols:
+            cleaned.append(cols)
+    result_rows_effective = cleaned
 
     TYPE_META[otype] = {
         "label": label,
         "input_fields": input_fields,
-        "display_fields": [f for f in input_fields if
-                           not (str((f[2] if len(f) > 2 else "") or "")).upper().startswith("TIMESTAMP")],
+        # Convenience list for templates: all user-configured fields except
+        # system-managed columns. (TIMESTAMP fields are allowed.)
+        "display_fields": [f for f in input_fields if (len(f) > 1 and f[1] not in SYSTEM_COLUMNS)],
         "layout_rows": layout_rows,
+        "result_rows": result_rows_effective,
+        "result_fields": [col for row in result_rows_effective for col in row],
         "required_fields": required_fields,
+        "filename_format": filename_format,
         "field_meta": field_meta,
     }
 
 # Expose to templates.
 app.jinja_env.globals["OBJECT_TYPES"] = TYPE_META
+
+
+# Template helpers
+@app.template_filter("mmddyyyy")
+def _filter_mmddyyyy(val):
+    return _mmddyyyy_from_iso(val)
 
 
 def make_banner_title(*parts: str) -> str:
@@ -255,7 +316,7 @@ def init_db():
     with get_db() as conn:
         for otype, meta in TYPE_META.items():
             table = otype
-            meta_cols = [(f[1], f[2]) for f in meta["input_fields"]]
+            meta_cols = [(f[1], meta["field_meta"][f[1]]["sqlite_type"]) for f in meta["input_fields"]]
 
             cols_sql = ",\n                ".join(
                 [f"{name} {ctype}" for name, ctype in [base_cols[0]] + meta_cols + base_cols[1:]]
@@ -425,6 +486,178 @@ def slug(s: str) -> str:
     return "".join(out) or "NA"
 
 
+def _mmddyyyy_from_iso(val: str) -> str:
+    v = (val or "").strip()
+    if not v:
+        return ""
+    # Already MM/DD/YYYY?
+    if re.match(r"^(0[1-9]|1[0-2])/(0[1-9]|[12]\d|3[01])/\d{4}$", v):
+        return v
+    # ISO YYYY-MM-DD
+    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})$", v)
+    if m:
+        y, mo, d = m.group(1), m.group(2), m.group(3)
+        return f"{mo}/{d}/{y}"
+    return v
+
+
+def _normalize_date_input(val: str) -> str:
+    """Parse flexible user-entered dates and store in a single configured format.
+
+    Accepts common inputs such as:
+      - MM/DD/YYYY or M/D/YYYY
+      - YYYY-MM-DD or YYYY/M/D
+      - DD/MM/YYYY (only when unambiguous: day > 12)
+    Stores using DATE_FORMAT (default %Y-%m-%d).
+    """
+    v = (val or "").strip()
+    if not v:
+        return ""
+
+    # Normalize separators
+    vv = re.sub(r"[.\-]", "/", v)
+
+    # Try explicit formats first
+    fmts = [
+        "%m/%d/%Y",
+        "%m/%d/%y",
+        "%Y-%m-%d",
+        "%Y/%m/%d",
+        "%Y/%m/%d",
+        "%Y/%m/%d",
+        "%Y/%m/%d",
+        "%Y/%m/%d",
+        "%Y/%m/%d",
+        "%Y/%m/%d",
+        "%Y/%m/%d",
+    ]
+    # We'll also attempt some relaxed parsing below.
+    from datetime import datetime
+
+    # Direct attempts
+    for fmt in ("%m/%d/%Y", "%m/%d/%y", "%Y-%m-%d", "%Y/%m/%d", "%Y/%m/%-d", "%Y/%-m/%d", "%Y/%-m/%-d"):
+        try:
+            dt = datetime.strptime(v, fmt)
+            return dt.strftime(DATE_FORMAT)
+        except Exception:
+            pass
+
+    # Handle M/D/YYYY without zero padding
+    m = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})$", vv)
+    if m:
+        mo, d, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        try:
+            dt = datetime(y, mo, d)
+            return dt.strftime(DATE_FORMAT)
+        except Exception:
+            return v
+
+    # Handle YYYY/M/D
+    m = re.match(r"^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$", v)
+    if m:
+        y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        try:
+            dt = datetime(y, mo, d)
+            return dt.strftime(DATE_FORMAT)
+        except Exception:
+            return v
+
+    # Handle DD/MM/YYYY when day is > 12 (avoids ambiguity with MM/DD/YYYY)
+    m = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})$", vv)
+    if m:
+        a, b, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if a > 12 and b <= 12:
+            try:
+                dt = datetime(y, b, a)
+                return dt.strftime(DATE_FORMAT)
+            except Exception:
+                return v
+
+    return v
+
+
+def _normalize_timestamp_input(val: str) -> str:
+    """Parse flexible user-entered datetimes and store in a single configured format.
+
+    Accepts:
+      - YYYY-MM-DD HH:MM[:SS]
+      - YYYY-MM-DDTHH:MM[:SS]
+      - MM/DD/YYYY HH:MM[:SS] (and M/D/YYYY)
+    Stores using TIMESTAMP_FORMAT (default DATE_FORMAT + 'T%H:%M:%S').
+    """
+    v = (val or "").strip()
+    if not v:
+        return ""
+
+    from datetime import datetime
+
+    # Common canonical forms
+    for fmt in (
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%dT%H:%M",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M",
+        "%m/%d/%Y %H:%M:%S",
+        "%m/%d/%Y %H:%M",
+    ):
+        try:
+            dt = datetime.strptime(v, fmt)
+            return dt.strftime(TIMESTAMP_FORMAT)
+        except Exception:
+            pass
+
+    # Handle M/D/YYYY with times
+    m = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$", v)
+    if m:
+        mo, d, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        hh, mm = int(m.group(4)), int(m.group(5))
+        ss = int(m.group(6) or 0)
+        try:
+            dt = datetime(y, mo, d, hh, mm, ss)
+            return dt.strftime(TIMESTAMP_FORMAT)
+        except Exception:
+            return v
+
+    # If it's just a date, normalize as date at midnight
+    d = _normalize_date_input(v)
+    if d and d != v:
+        try:
+            dt = datetime.strptime(d, DATE_FORMAT)
+            return datetime(dt.year, dt.month, dt.day, 0, 0, 0).strftime(TIMESTAMP_FORMAT)
+        except Exception:
+            return v
+
+    return v
+
+def _safe_format_filename(fmt: str, meta_values: dict, record_id: int) -> str:
+    """Safely render a filename using a Python format string.
+
+    - Placeholders must match SQL column names from config (e.g. {unit}, {lot}, {record_id}).
+    - All substituted values are slugged for filesystem safety.
+    - Missing placeholders resolve to empty string.
+    """
+    fmt = (fmt or "").strip()
+    if not fmt:
+        return ""
+
+    class _Default(dict):
+        def __missing__(self, key):
+            return ""
+
+    ctx = {k: slug(str(v)) for k, v in (meta_values or {}).items()}
+    ctx.setdefault("record_id", record_id)
+
+    try:
+        out = fmt.format_map(_Default(ctx))
+    except Exception:
+        # Do not crash uploads because of a bad format string.
+        out = fmt
+
+    out = slug(out)
+    out = re.sub(r"_+", "_", out).strip("_")
+    return out
+
+
 def maps_links(lat, lon):
     if lat is None or lon is None:
         return None, None
@@ -464,11 +697,45 @@ def form():
     if selected not in TYPE_META:
         selected = next(iter(TYPE_META.keys()))
     g.current_type = selected
+    prefill_by_type = session.get('prefill_by_type', {})
     return render_template("upload.html",
                            last_row=last_row, last_type=last_type, last_meta=last_meta,
                            selected_type=selected,
-                           banner_title=make_banner_title(selected.capitalize()))
+                           banner_title=make_banner_title(selected.capitalize()),
+                           prefill_by_type=prefill_by_type)
 
+
+
+
+def _apply_postprocess_values(otype: str, values: dict) -> dict:
+    """Optional post-processing hook.
+
+    If config.py defines a callable named `postprocess_values`, it will be called as:
+        postprocess_values(object_type, values_dict)
+
+    It should return a dict (may be the same object) containing values compatible
+    with the database schema. Unknown keys are dropped.
+    """
+    fn = getattr(app_config, "postprocess_values", None)
+    if not callable(fn):
+        return values
+
+    try:
+        out = fn(otype, dict(values))
+    except TypeError:
+        # Back-compat: allow a hook that only accepts the values dict.
+        out = fn(dict(values))
+
+    if out is None:
+        out = values
+    if not isinstance(out, dict):
+        raise TypeError("config.postprocess_values must return a dict (or None)")
+
+    allowed = set(TYPE_META.get(otype, {}).get("field_meta", {}).keys())
+    cleaned = {}
+    for k in allowed:
+        cleaned[k] = out.get(k)
+    return cleaned
 
 @app.route("/submit", methods=["POST"])
 def submit():
@@ -480,40 +747,79 @@ def submit():
     meta = TYPE_META[otype]
     submit_mode = request.form.get("submit_mode", "image")
     ts = int(time.time())
-    ts_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts))
+    ts_str = __import__("datetime").datetime.fromtimestamp(ts).strftime(TIMESTAMP_FORMAT)
 
     # Coerce metadata values from request.form according to config.
     meta_values = {}
-    signature_values = {}
+
     for fdef in meta["input_fields"]:
-        _label, col, coltype = fdef[0], fdef[1], fdef[2]
-        t = (coltype or "TEXT").upper()
+        _label, col, coltype = fdef[0], fdef[1], (fdef[2] if len(fdef) > 2 else "TEXT")
+        t = (str(coltype or "TEXT")).upper().strip()
+        fm = meta["field_meta"].get(col, {})
+
         if t.startswith("TIMESTAMP"):
             meta_values[col] = ts_str
+            continue
+
+        # CONSTANT fields are server-controlled (clients may submit, but we overwrite).
+        if t == "CONSTANT" or fm.get("widget") == "constant":
+            meta_values[col] = str(fm.get("constant_value") or "")
+            continue
+
+        # RADIO fields are multi-select (0+), stored as a JSON list in a TEXT column.
+        if fm.get("widget") == "radio":
+            selected = [str(v).strip() for v in request.form.getlist(col) if str(v).strip()]
+            if selected:
+                meta_values[col] = json.dumps(selected, ensure_ascii=False, separators=(",", ":"))
+            else:
+                meta_values[col] = None
             continue
 
         raw = (request.form.get(col) or "").strip()
         if not raw:
             meta_values[col] = None
-            signature_values[col] = None
             continue
 
         if t.startswith("INT"):
             try:
-                v = int(raw)
+                meta_values[col] = int(raw)
             except ValueError:
-                v = None
+                meta_values[col] = None
         elif t.startswith("FLOAT") or t.startswith("REAL") or t.startswith("DOUBLE"):
             try:
-                v = float(raw)
+                meta_values[col] = float(raw)
             except ValueError:
-                v = None
-        elif "DATE" in t and "TIME" not in t:
-            v = raw
+                meta_values[col] = None
+        elif t == 'DATE':
+            meta_values[col] = _normalize_date_input(raw)
+        elif t == 'TIMESTAMP':
+            meta_values[col] = _normalize_timestamp_input(raw)
         else:
-            v = raw
-        meta_values[col] = v
-        signature_values[col] = v
+            meta_values[col] = raw
+
+    # Allow optional post-processing of the collected form values.
+    meta_values = _apply_postprocess_values(otype, meta_values)
+
+    # Record matching signature: use non-timestamp values only.
+    signature_values = {}
+    for fdef in meta["input_fields"]:
+        col, coltype = fdef[1], (fdef[2] if len(fdef) > 2 else "TEXT")
+        t = (str(coltype or "TEXT")).upper().strip()
+        signature_values[col] = meta_values.get(col)
+    # Remember the user's most recent inputs per object type (for POST-to-POST continuity).
+    prefill_by_type = session.get('prefill_by_type', {})
+    prefill = {}
+    for fdef in meta['input_fields']:
+        col = fdef[1]
+        fm = meta['field_meta'].get(col, {})
+        if fm.get('widget') == 'radio':
+            prefill[col] = [str(v).strip() for v in request.form.getlist(col) if str(v).strip()]
+        elif fm.get('widget') == 'constant':
+            prefill[col] = str(fm.get('constant_value') or '')
+        else:
+            prefill[col] = request.form.get(col, '')
+    prefill_by_type[otype] = prefill
+    session['prefill_by_type'] = prefill_by_type
 
     for col in meta["required_fields"]:
         if not meta_values.get(col):
@@ -603,20 +909,12 @@ def submit():
             return []
 
     def _make_base(record_id: int) -> str:
-        # Keep legacy artifact naming if those fields exist.
-        if otype == "artifacts" and all(
-                k in meta_values for k in ["excavation_unit", "tnumber", "lot", "area", "level"]):
-            unit = slug(meta_values.get("excavation_unit"))
-            tnum = slug(meta_values.get("tnumber"))
-            lot = slug(meta_values.get("lot"))
-            area = slug(meta_values.get("area"))
-            level = slug(meta_values.get("level"))
-            return f"{FILENAME_PREFIX}_ARTIFACT_{unit}_{tnum}_{lot}_{area}_{level}_ID{record_id}"
-        if otype == "sites":
-            sn = slug(meta_values.get("site_name"))
-            vill = slug(meta_values.get("village"))
-            return f"{FILENAME_PREFIX}_SITE_{vill}_{sn}_ID{record_id}"
-        return f"{FILENAME_PREFIX}_{otype.upper()}_ID{record_id}"
+        fmt = (meta.get("filename_format") or "").strip()
+        out = _safe_format_filename(fmt, meta_values, record_id)
+        if out:
+            return out
+        # If no format is provided, fall back to a simple deterministic name.
+        return slug(f"{otype.upper()}_ID{record_id}")
 
     with get_db() as conn:
         # Try to match an existing record by metadata signature.
@@ -860,8 +1158,20 @@ def admin_edit(otype, aid):
             for f in meta["input_fields"]:
                 label, col, coltype = f[0], f[1], f[2]
                 t = (coltype or "TEXT").upper()
-                if t.startswith("TIMESTAMP"):
+                fm = meta["field_meta"].get(col, {})
+                t = (str(coltype or "TEXT")).upper().strip()
+
+                # Enforce CONSTANT fields as server-controlled values.
+                if t == "CONSTANT" or fm.get("widget") == "constant":
+                    updates[col] = str(fm.get("constant_value") or "")
                     continue
+
+                # RADIO fields are multi-select, stored as JSON list (TEXT).
+                if fm.get("widget") == "radio":
+                    selected = [str(v).strip() for v in request.form.getlist(col) if str(v).strip()]
+                    updates[col] = json.dumps(selected, ensure_ascii=False, separators=(",", ":")) if selected else None
+                    continue
+
                 raw = (request.form.get(col) or "").strip()
                 if not raw:
                     updates[col] = None
@@ -875,6 +1185,10 @@ def admin_edit(otype, aid):
                         updates[col] = float(raw)
                     except ValueError:
                         updates[col] = None
+                elif t == "DATE":
+                    updates[col] = _normalize_date_input(raw)
+                elif t == "TIMESTAMP":
+                    updates[col] = _normalize_timestamp_input(raw)
                 else:
                     updates[col] = raw
             if updates:

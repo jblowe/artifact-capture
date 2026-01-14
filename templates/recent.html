@@ -53,10 +53,23 @@
           {% if images %}<div class="small">{{ images|length }} image(s)</div>{% endif %}
         </td>
         <td class="small">
-          {% if r['date_recorded'] %}<strong>Date recorded:</strong> {{ r['date_recorded'] }}<br>{% endif %}
-          {% for col in meta.required_fields %}
-            {% if r[col] %}<strong>{{ meta.field_meta[col].label }}:</strong> {{ r[col] }}<br>{% endif %}
-          {% endfor %}
+          {% if r['date_updated'] %}<strong>Date recorded:</strong> {{ r['date_updated'] }}<br>{% endif %}
+          {# Show fields using result_rows (separate from upload layout_rows). #}
+          <table class="form-table">
+            {% for row in meta.result_rows %}
+              <tr>
+                {% for col in row %}
+                  {% if True %}
+                    <td class="small">
+                      {% if r[col] %}
+                        <strong>{{ meta.field_meta[col].label }}:</strong> {{ r[col] }}
+                      {% endif %}
+                    </td>
+                  {% endif %}
+                {% endfor %}
+              </tr>
+            {% endfor %}
+          </table>
         </td>
         <td class="small">
           {% if r['gps_lat'] and r['gps_lon'] %}

@@ -61,10 +61,10 @@
           {% if images %}<div class="small">× {{ images|length }}</div>{% endif %}
         </td>
         <td class="small">
-          {% if r['date_recorded'] %}<strong>Date recorded:</strong> {{ r['date_recorded'] }}<br>{% endif %}
+          {% if r['date_updated'] %}<strong>Date recorded:</strong> {{ r['date_updated'] }}<br>{% endif %}
           {% for f in meta.display_fields %}            {% set label = f[0] %}
             {% set col = f[1] %}
-            {% if col != 'date_recorded' and r[col] %}
+            {% if col != 'date_updated' and r[col] %}
               <strong>{{ label }}:</strong> {{ r[col] }}<br>
             {% endif %}
           {% endfor %}

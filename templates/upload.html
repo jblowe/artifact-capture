@@ -17,8 +17,8 @@
 
     <div>
       <strong>Saved {{ last_meta.label }} ID {{ last_row["id"] }}</strong>
-      {% if last_row["date_recorded"] %}
-        <div class="small">Date recorded: {{ last_row["date_recorded"] }}</div>
+      {% if last_row["date_updated"] %}
+        <div class="small">Date recorded: {{ last_row["date_updated"] }}</div>
       {% endif %}
       {% if last_row["gps_lat"] and last_row["gps_lon"] %}
         <div class="small">
@@ -90,6 +90,7 @@
 
   {% for key, meta in OBJECT_TYPES.items() %}
     <div class="type-panel" data-type="{{ key }}" style="{% if key != selected_type %}display:none{% endif %}">
+      {% set pv = prefill_by_type.get(key, {}) %}
       <form class="captureForm" action="/submit" method="post" enctype="multipart/form-data" autocomplete="on">
         <input type="hidden" name="object_type" value="{{ key }}">
 
@@ -104,34 +105,52 @@
                   {% set widget = fm.widget %}
                   {% set options = fm.options %}
                   {% set is_required = fm.required %}
-                  {% if not sql_type.startswith('TIMESTAMP') %}
-                    <td class="form-label">
+                                      <td class="form-label">
                       <label for="{{ key }}__{{ col }}">{{ label }}{% if is_required %}<span class="required-mark">*</span>{% endif %}</label>
                     </td>
                     <td class="form-input">
-                      {% if widget == 'dropdown' and options %}
+                      {% if widget == 'constant' %}
+                        <input id="{{ key }}__{{ col }}" name="{{ col }}" type="text" value="{{ fm.constant_value }}" readonly{% if is_required %} required{% endif %}>
+                      {% elif widget == 'radio' and options %}
+                        <div class="radio-group">
+                          {% for opt in options %}
+                            <label class="check-item">
+                              <input type="checkbox" name="{{ col }}" value="{{ opt }}" {% if opt in (pv.get(col, []) or []) %}checked{% endif %}> {{ opt }}
+                            </label>
+                          {% endfor %}
+                        </div>
+                      {% elif widget == 'dropdown' and options %}
                         <select id="{{ key }}__{{ col }}" name="{{ col }}"{% if is_required %} required{% endif %}>
                           <option value=""></option>
                           {% for opt in options %}
-                            <option value="{{ opt }}">{{ opt }}</option>
+                            <option value="{{ opt }}" {% if (pv.get(col, "") == opt) %}selected{% endif %}>{{ opt }}</option>
                           {% endfor %}
                         </select>
                       {% elif col == 'notes' or col == 'description' %}
-                        <textarea id="{{ key }}__{{ col }}" name="{{ col }}"{% if is_required %} required{% endif %}></textarea>
+                        <textarea id="{{ key }}__{{ col }}" name="{{ col }}"{% if is_required %} required{% endif %}>{{ pv.get(col, "") }}</textarea>
                       {% else %}
                         {% if 'DATE' in sql_type and 'TIME' not in sql_type %}
-                          <input id="{{ key }}__{{ col }}" name="{{ col }}" type="date"{% if is_required %} required{% endif %}>
+                          <input id="{{ key }}__{{ col }}" name="{{ col }}" type="text" class="date-mmddyyyy"
+                                 value="{{ pv.get(col, '') }}"
+                                 placeholder="MM/DD/YYYY" inputmode="numeric" autocomplete="off"
+                                 pattern="^(0[1-9]|1[0-2])/(0[1-9]|[12][0-9]|3[01])/[0-9]{4}$"{% if is_required %} required{% endif %}>
                         {% elif 'TIME' in sql_type %}
-                          <input id="{{ key }}__{{ col }}" name="{{ col }}" type="datetime-local"{% if is_required %} required{% endif %}>
-                        {% elif sql_type.startswith('INT') or sql_type.startswith('FLOAT') or sql_type.startswith('REAL') %}
-                          <input id="{{ key }}__{{ col }}" name="{{ col }}" type="number" step="any"{% if is_required %} required{% endif %}>
+                          <input id="{{ key }}__{{ col }}" name="{{ col }}" type="text" class="timestamp-input"
+                                 value="{{ pv.get(col, '') }}"
+                                 placeholder="YYYY-MM-DDTHH:MM:SS" autocomplete="off"{% if is_required %} required{% endif %}>
+                        {% elif sql_type.startswith('INT') %}
+                          <input id="{{ key }}__{{ col }}" name="{{ col }}" type="number" step="1"
+                                 value="{{ pv.get(col, '') }}"{% if is_required %} required{% endif %}>
+                        {% elif sql_type.startswith('FLOAT') or sql_type.startswith('REAL') or sql_type.startswith('DOUBLE') %}
+                          <input id="{{ key }}__{{ col }}" name="{{ col }}" type="number" step="any"
+                                 value="{{ pv.get(col, '') }}"{% if is_required %} required{% endif %}>
                         {% else %}
-                          <input id="{{ key }}__{{ col }}" name="{{ col }}" type="text"{% if is_required %} required{% endif %}>
+                          <input id="{{ key }}__{{ col }}" name="{{ col }}" type="text"
+                                 value="{{ pv.get(col, '') }}"{% if is_required %} required{% endif %}>
                         {% endif %}
                       {% endif %}
                     </td>
                   {% endif %}
-                {% endif %}
               {% endfor %}
             </tr>
           {% endfor %}
@@ -168,6 +187,18 @@
 
 </div>
 
+
+
+<script>
+document.addEventListener("input", (e) => {
+  const el = e.target;
+  if (!el.classList || !el.classList.contains("date-mmddyyyy")) return;
+  let v = (el.value || "").replace(/[^\d]/g, "").slice(0, 8);
+  if (v.length >= 5) el.value = v.slice(0,2) + "/" + v.slice(2,4) + "/" + v.slice(4);
+  else if (v.length >= 3) el.value = v.slice(0,2) + "/" + v.slice(2);
+  else el.value = v;
+});
+</script>
 
 </body>
 </html>

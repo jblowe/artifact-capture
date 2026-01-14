@@ -25,7 +25,7 @@
       <div class="card-hd">
         <div>
           <div style="font-weight:800;">Edit {{ meta.label }} #{{ r['id'] }}</div>
-          <div class="meta">{% if r['date_recorded'] %}Recorded: {{ r['date_recorded'] }}{% endif %}</div>
+          <div class="meta">{% if r['date_updated'] %}Recorded: {{ r['date_updated'] }}{% endif %}</div>
         </div>
         <div class="actions">
           <form method="post" action="{{ url_for('admin_delete', otype=otype, aid=r['id']) }}" style="margin:0;" onsubmit="return confirm('Delete {{ meta.label }} {{ r['id'] }}? This will remove the DB row and all attached files.');">
@@ -42,16 +42,55 @@
                 <td class="label">Record ID</td>
                 <td><input type="text" value="{{ r['id'] }}" readonly></td>
               </tr>
-              {% for f in meta.input_fields %}
-                {% set label = f[0] %}
-                {% set col = f[1] %}
-                {% set t = (f[2] or 'TEXT')|upper %}
-                {% if not t.startswith('TIMESTAMP') %}
+              {# Render all configured (non-system) fields. date_updated is system-managed and shown in the header. #}
+              {# Render fields using result_rows (separate from upload layout_rows). #}
+              <table class="form-table">
+                {% for row in meta.result_rows %}
                   <tr>
-                    <td class="label">{{ label }}</td>
-                    <td>
-                      {% set fm = meta.field_meta[col] %}
-                      {% if fm.widget == 'dropdown' and fm.options %}
+                    {% for col in row %}
+                      {% if col in meta.field_meta %}
+                        {% set fm = meta.field_meta[col] %}
+                        {% set widget = fm.widget %}
+                        {% set options = fm.options %}
+                        {% set val = r[col] if r[col] is not none else '' %}
+                        <td>
+                          <div class="field">
+                            <div class="field-label">{{ fm.label }}</div>
+
+                            {% if widget == 'constant' %}
+                              <input type="text" name="{{ col }}" value="{{ fm.constant_value }}" readonly>
+
+                            {% elif widget == 'radio' and options %}
+                              {% set selected = (val|fromjson) if val else [] %}
+                              <div class="radio-group">
+                                {% for opt in options %}
+                                  <label class="check-item">
+                                    <input type="checkbox" name="{{ col }}" value="{{ opt }}" {% if opt in selected %}checked{% endif %}> {{ opt }}
+                                  </label>
+                                {% endfor %}
+                              </div>
+
+                            {% elif widget == 'dropdown' and options %}
+                              <select name="{{ col }}">
+                                <option value=""></option>
+                                {% for opt in options %}
+                                  <option value="{{ opt }}" {% if val == opt %}selected{% endif %}>{{ opt }}</option>
+                                {% endfor %}
+                              </select>
+
+                            {% else %}
+                              <input type="text" name="{{ col }}" value="{{ val }}">
+                            {% endif %}
+
+                          </div>
+                        </td>
+                      {% endif %}
+                    {% endfor %}
+                  </tr>
+                {% endfor %}
+              </table>
+                        </div>
+                      {% elif fm.widget == 'dropdown' and fm.options %}
                         <select name="{{ col }}">
                           <option value=""></option>
                           {% for opt in fm.options %}
@@ -64,6 +103,11 @@
                         <input type="number" step="1" name="{{ col }}" value="{{ r[col] or '' }}">
                       {% elif t.startswith('FLOAT') or t.startswith('REAL') or t.startswith('DOUBLE') %}
                         <input type="number" step="any" name="{{ col }}" value="{{ r[col] or '' }}">
+                      {% elif t == 'DATE' %}
+                        <input type="text" class="date-mmddyyyy" name="{{ col }}" placeholder="MM/DD/YYYY" inputmode="numeric"
+                               autocomplete="off" value="{{ (r[col] or '')|mmddyyyy }}">
+                      {% elif t == 'TIMESTAMP' %}
+                        <input type="text" name="{{ col }}" value="{{ r[col] or '' }}" placeholder="YYYY-MM-DDTHH:MM:SS">
                       {% else %}
                         <input type="text" name="{{ col }}" value="{{ r[col] or '' }}">
                       {% endif %}

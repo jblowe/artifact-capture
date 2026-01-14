@@ -62,7 +62,7 @@
 
   // ---- persisted form values (per object type) ----
   // Stores values for inputs/selects/textareas (excluding file inputs) by object_type + field name.
-  const PERSIST_KEY = "artifact_capture_persist_v1";
+  const PERSIST_KEY = "artifact_capture_persist_v2";
 
   function loadPersisted() {
     try { return JSON.parse(localStorage.getItem(PERSIST_KEY) || "{}"); }
@@ -100,7 +100,12 @@
         if (!(name in values)) return;
 
         if (typeAttr === "checkbox") {
-          el.checked = !!values[name];
+          const v = values[name];
+          if (Array.isArray(v)) {
+            el.checked = v.map(String).includes(String(el.value));
+          } else {
+            el.checked = !!v;
+          }
         } else if (typeAttr === "radio") {
           // restore by matching value
           if (String(el.value) === String(values[name])) el.checked = true;
@@ -131,7 +136,14 @@
       saved[type] = saved[type] || {};
 
       if (typeAttr === "checkbox") {
-        saved[type][name] = !!el.checked;
+        // If there are multiple checkboxes with the same name (checkbox group), store an array of checked values.
+        const group = $all(`input[type="checkbox"][name="${CSS.escape(name)}"]`, panel);
+        if (group.length > 1) {
+          const checked = group.filter(cb => cb.checked).map(cb => cb.value);
+          saved[type][name] = checked;
+        } else {
+          saved[type][name] = !!el.checked;
+        }
       } else if (typeAttr === "radio") {
         if (el.checked) saved[type][name] = el.value;
       } else {
