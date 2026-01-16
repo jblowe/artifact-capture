@@ -43,7 +43,7 @@ object_types = {
 
     'bags':
         {'label': 'Bags',
-         'filename_format': 'BAG_{season}_Unit{unit}_T{tnum}_Lot_{lot}_Area{area}_Level_{level}_ID{record_id}',
+         'filename_format': 'BAG_{season}_Unit{excavation_unit}_T{tnumber}_Lot_{lot}_Area{area}_Level_{level}_ID{record_id}',
          'input_fields': [
              ('Recorders', 'recorders', 'TEXT', RECORDERS),
              ('T-Number', 'tnumber', 'TEXT'),
@@ -79,7 +79,7 @@ object_types = {
 
     'artifacts':
         {'label': 'Artifacts',
-         'filename_format': 'ART_{season}_Unit{unit}_T{tnum}_Lot_{lot}_Area{area}_Level_{level}_ID{record_id}',
+         'filename_format': 'ART_{season}_Unit{excavation_unit}_T{tnumber}_Lot_{lot}_Area{area}_Level_{level}_ID{record_id}',
          'input_fields': [
              ('Recorders', 'recorders', 'TEXT', RECORDERS),
              ('T-Number', 'tnumber', 'TEXT'),
@@ -100,13 +100,13 @@ object_types = {
              ['context'],
              ['tnumber'],
              ['excavation_date'],
-             ['surface_treatment'],
-             ['temper'],
              ['typology_number'],
-             # ['munsell_color'],
-             ['collar_height'],
+             ['surface_treatment'],
              ['rim_diameter'],
+             ['collar_height'],
+             ['temper'],
              ['notes'],
+             # ['munsell_color'],
          ],
          'result_rows': [
              ['recorders'],
@@ -133,7 +133,7 @@ object_types = {
 
     'photographs':
         {'label': 'Photographs',
-         'filename_format': 'PHOTO_{site_name}_ID{record_id}',
+         'filename_format': 'PHOTO_{site_name}_{shot_type}ID{record_id}',
          'input_fields': [
              ('Photographer', 'photographer', 'TEXT', RECORDERS),
              SEASON, CONTEXT, EX_UNIT, AREA, LEVEL, EX_DATE,
