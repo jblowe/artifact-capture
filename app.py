@@ -135,7 +135,7 @@ for otype, cfg in OBJECT_TYPES.items():
     result_rows = cfg.get("result_rows") or []  # layout for Recent/Edit results
     # Required fields should only refer to user-configured columns.
     required_fields = tuple([c for c in (cfg.get("required_fields") or ()) if c not in SYSTEM_COLUMNS])
-    filename_format = cfg.get("filename_format") or cfg.get("filename_format")
+    filename_format = cfg.get("filename_format")
     if not input_fields:
         raise RuntimeError(f"object_types[{otype!r}] has no input_fields")
 
@@ -705,7 +705,15 @@ def form():
                            prefill_by_type=prefill_by_type)
 
 
-
+def extract_values(otype, dico):
+    context = dico['context']
+    parts = context.split(',')
+    if len(parts) < 3:
+        raise TypeError("need 3 and only 3 comma-separated values for context: Unit,Area,Level")
+    dico['excavation_unit'] = parts[0].upper().strip()
+    dico['area'] = parts[1].upper().strip()
+    dico['level'] = parts[2].upper().strip()
+    return dico
 
 def _apply_postprocess_values(otype: str, values: dict) -> dict:
     """Optional post-processing hook.
@@ -716,20 +724,12 @@ def _apply_postprocess_values(otype: str, values: dict) -> dict:
     It should return a dict (may be the same object) containing values compatible
     with the database schema. Unknown keys are dropped.
     """
-    fn = getattr(app_config, "postprocess_values", None)
-    if not callable(fn):
-        return values
-
-    try:
-        out = fn(otype, dict(values))
-    except TypeError:
-        # Back-compat: allow a hook that only accepts the values dict.
-        out = fn(dict(values))
+    out = extract_values(otype, dict(values))
 
     if out is None:
         out = values
     if not isinstance(out, dict):
-        raise TypeError("config.postprocess_values must return a dict (or None)")
+        raise TypeError("postprocess_values must return a dict (or None)")
 
     allowed = set(TYPE_META.get(otype, {}).get("field_meta", {}).keys())
     cleaned = {}
