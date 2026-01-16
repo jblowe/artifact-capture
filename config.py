@@ -61,7 +61,7 @@ object_types = {
              ['notes'],
          ],
          'result_rows': [
-             ['recorders'],
+             # ['recorders'],
              ['season', 'tnumber'],
              ['excavation_unit', 'area', 'level'],
              ['context', 'excavation_date', 'date_recorded'],
@@ -95,7 +95,7 @@ object_types = {
              ('Notes', 'notes', 'TEXT'),
          ],
          'layout_rows': [
-             ['recorders'],
+             # ['recorders'],
              ['season'],
              ['context'],
              ['tnumber'],

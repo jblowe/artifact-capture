@@ -175,9 +175,13 @@
 {% endif %}
         </table>
 
+        <input type="hidden" name="action" id="{{ key }}__action" value="">
         <div class="actions">
-          <button type="submit" name="submit_mode" value="image" onclick="requirePhoto(true)">Upload Image</button>
-          <button type="submit" name="submit_mode" value="metadata" onclick="requirePhoto(false)">Upload Metadata</button>
+          <button type="submit" name="submit_mode" value="image" onclick="setAction('{{ key }}','add_image'); requirePhoto(true)">Add image</button>
+          <button type="submit" name="submit_mode" value="metadata" onclick="setAction('{{ key }}','new_record'); requirePhoto(false); return confirmDuplicateNewRecord('{{ key }}')">New Record</button>
+          {% if (current_record_by_type or {}).get(key) %}
+          <button type="submit" name="submit_mode" value="metadata" onclick="setAction('{{ key }}','update_record'); requirePhoto(false)">Update Record</button>
+          {% endif %}
           <button type="button" onclick="resetForm('{{ key }}')">Reset</button>
         </div>
       </form>

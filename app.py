@@ -135,7 +135,7 @@ for otype, cfg in OBJECT_TYPES.items():
     result_rows = cfg.get("result_rows") or []  # layout for Recent/Edit results
     # Required fields should only refer to user-configured columns.
     required_fields = tuple([c for c in (cfg.get("required_fields") or ()) if c not in SYSTEM_COLUMNS])
-    filename_format = cfg.get("filename_format")
+    filename_format = cfg.get("filename_format") or cfg.get("filename_format")
     if not input_fields:
         raise RuntimeError(f"object_types[{otype!r}] has no input_fields")
 
@@ -702,8 +702,8 @@ def form():
                            last_row=last_row, last_type=last_type, last_meta=last_meta,
                            selected_type=selected,
                            banner_title=make_banner_title(selected.capitalize()),
-                           prefill_by_type=prefill_by_type)
-
+                           prefill_by_type=prefill_by_type,
+                           current_record_by_type=session.get('current_record_by_type', {}))
 
 def extract_values(otype, dico):
     context = dico['context']
@@ -717,10 +717,6 @@ def extract_values(otype, dico):
 
 def _apply_postprocess_values(otype: str, values: dict) -> dict:
     """Optional post-processing hook.
-
-    If config.py defines a callable named `postprocess_values`, it will be called as:
-        postprocess_values(object_type, values_dict)
-
     It should return a dict (may be the same object) containing values compatible
     with the database schema. Unknown keys are dropped.
     """
@@ -746,6 +742,7 @@ def submit():
 
     meta = TYPE_META[otype]
     submit_mode = request.form.get("submit_mode", "image")
+    action = (request.form.get("action") or "").strip().lower()
     ts = int(time.time())
     ts_str = __import__("datetime").datetime.fromtimestamp(ts).strftime(TIMESTAMP_FORMAT)
 
@@ -832,33 +829,40 @@ def submit():
     if GPS_ENABLED:
         require_gps = request.form.get("require_gps") == "on"
 
-    # Metadata-only submission: create/update a row without requiring an image
+    # Metadata-only submission (New Record / Update Record)
     if submit_mode == "metadata":
         meta_signature = json.dumps(signature_values, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-        with get_db() as conn:
-            row = conn.execute(
-                f"SELECT * FROM {otype} WHERE meta_signature=? ORDER BY id DESC LIMIT 1",
-                (meta_signature,),
-            ).fetchone()
+        meta_cols = [fdef[1] for fdef in meta["input_fields"]]
+        current_by_type = session.get('current_record_by_type', {})
 
-            meta_cols = [fdef[1] for fdef in meta["input_fields"]]
-            if row:
+        with get_db() as conn:
+            if action == 'update_record':
+                rid = current_by_type.get(otype)
+                if not rid:
+                    flash('No current record to update. Click New Record first.')
+                    return redirect(url_for('form', type=otype))
+
                 sets = ",".join([f"{c}=?" for c in meta_cols] + ["meta_signature=?", "timestamp=?"])
                 vals = [meta_values.get(c) for c in meta_cols] + [meta_signature, ts]
-                conn.execute(f"UPDATE {otype} SET {sets} WHERE id=?", vals + [row["id"]])
-            else:
-                db_cols = meta_cols + ["meta_signature", "images_json", "thumbs_json", "webps_json", "json_files_json",
-                                       "timestamp"]
-                vals = [meta_values.get(c) for c in meta_cols] + [
-                    meta_signature,
-                    json.dumps([]), json.dumps([]), json.dumps([]), json.dumps([]),
-                    ts,
-                ]
-                placeholders = ",".join(["?"] * len(db_cols))
-                conn.execute(f"INSERT INTO {otype} ({','.join(db_cols)}) VALUES ({placeholders})", vals)
+                conn.execute(f"UPDATE {otype} SET {sets} WHERE id=?", vals + [rid])
+                flash(f"Record {rid} updated.")
+                return redirect(url_for('form', type=otype, last_id=rid, last_type=otype))
 
-        flash("Metadata saved.")
-        return redirect(url_for("form", type=otype))
+            # Default (and 'new_record'): always insert a fresh row
+            db_cols = meta_cols + ["meta_signature", "images_json", "thumbs_json", "webps_json", "json_files_json", "timestamp"]
+            vals = [meta_values.get(c) for c in meta_cols] + [
+                meta_signature,
+                json.dumps([]), json.dumps([]), json.dumps([]), json.dumps([]),
+                ts,
+            ]
+            placeholders = ",".join(["?"] * len(db_cols))
+            cur = conn.execute(f"INSERT INTO {otype} ({','.join(db_cols)}) VALUES ({placeholders})", vals)
+            rid = int(cur.lastrowid)
+
+        current_by_type[otype] = rid
+        session['current_record_by_type'] = current_by_type
+        flash(f"New record created: {rid}.")
+        return redirect(url_for('form', type=otype, last_id=rid, last_type=otype))
 
     f = request.files.get("photo")
     if not f or f.filename == "":
@@ -917,11 +921,25 @@ def submit():
         return slug(f"{otype.upper()}_ID{record_id}")
 
     with get_db() as conn:
-        # Try to match an existing record by metadata signature.
-        row = conn.execute(
-            f"SELECT * FROM {otype} WHERE meta_signature=? ORDER BY id DESC LIMIT 1",
-            (meta_signature,),
-        ).fetchone()
+        # Prefer the current record (created by New Record) when it matches the current form values.
+        row = None
+        current_by_type = session.get('current_record_by_type', {})
+        cur_id = current_by_type.get(otype)
+        if cur_id:
+            try:
+                cand = conn.execute(f"SELECT * FROM {otype} WHERE id=?", (cur_id,)).fetchone()
+                if cand and cand.get('meta_signature') == meta_signature:
+                    row = cand
+            except Exception:
+                row = None
+
+        # Otherwise, try to match an existing record by metadata signature.
+        if row is None:
+            row = conn.execute(
+                f"SELECT * FROM {otype} WHERE meta_signature=? ORDER BY id DESC LIMIT 1",
+                (meta_signature,),
+            ).fetchone()
+
 
         if row:
             record_id = int(row["id"])
@@ -953,6 +971,15 @@ def submit():
             )
             record_id = cur.lastrowid
             images, thumbs, webps, jfiles = [], [], [], []
+
+
+        # Remember / update current record for this object type
+        try:
+            current_by_type = session.get('current_record_by_type', {})
+            current_by_type[otype] = int(record_id)
+            session['current_record_by_type'] = current_by_type
+        except Exception:
+            pass
 
         img_idx = len(images) + 1
         base = _make_base(record_id) + f"_IMG{img_idx}"

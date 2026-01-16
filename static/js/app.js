@@ -46,6 +46,95 @@
     } catch (e) {}
   };
 
+  // --- workflow helpers (New Record / Add image / Update Record) ---
+  window.setAction = function(typeKey, action) {
+    try {
+      var panel = document.querySelector('.type-panel[data-type="' + typeKey + '"]');
+      if (!panel) return;
+      var hidden = panel.querySelector('input[type="hidden"][name="action"]');
+      if (hidden) hidden.value = String(action || '');
+    } catch(e) {}
+  };
+
+  const LAST_NEW_KEY = 'artifact_capture_last_new_v1';
+
+  function loadLastNew() {
+    try { return JSON.parse(localStorage.getItem(LAST_NEW_KEY) || '{}'); }
+    catch(e) { return {}; }
+  }
+  function saveLastNew(obj) {
+    try { localStorage.setItem(LAST_NEW_KEY, JSON.stringify(obj)); }
+    catch(e) {}
+  }
+
+  function stableStringify(obj) {
+    // Deterministic stringify with sorted keys; arrays are normalized to strings and sorted.
+    if (obj === null || obj === undefined) return 'null';
+    if (Array.isArray(obj)) {
+      return '[' + obj.map(v => JSON.stringify(String(v))).sort().join(',') + ']';
+    }
+    if (typeof obj === 'object') {
+      const keys = Object.keys(obj).sort();
+      return '{' + keys.map(k => JSON.stringify(k) + ':' + stableStringify(obj[k])).join(',') + '}';
+    }
+    return JSON.stringify(String(obj));
+  }
+
+  function computeFormSignature(panel) {
+    const data = {};
+    // Collect all named inputs/selects/textareas except file + submit controls
+    const fields = Array.from(panel.querySelectorAll('input, select, textarea'));
+    // First handle checkbox groups
+    const checkboxes = fields.filter(el => (el.getAttribute('type') || '').toLowerCase() === 'checkbox' && el.name);
+    const checkboxNames = Array.from(new Set(checkboxes.map(el => el.name)));
+    checkboxNames.forEach(name => {
+      const group = checkboxes.filter(cb => cb.name === name);
+      if (group.length > 1) {
+        data[name] = group.filter(cb => cb.checked).map(cb => cb.value);
+      } else {
+        data[name] = group[0].checked ? 'true' : 'false';
+      }
+    });
+
+    fields.forEach(el => {
+      const name = el.getAttribute('name');
+      if (!name) return;
+      const typeAttr = (el.getAttribute('type') || '').toLowerCase();
+      if (typeAttr === 'file') return;
+      if (name === 'submit_mode' || name === 'action') return;
+      if (typeAttr === 'hidden' && (name === 'gps_lat' || name === 'gps_lon' || name === 'gps_acc')) return;
+      if (typeAttr === 'checkbox') return; // already handled
+      if (typeAttr === 'radio') {
+        if (el.checked) data[name] = el.value;
+        return;
+      }
+      data[name] = el.value;
+    });
+
+    return stableStringify(data);
+  }
+
+  window.confirmDuplicateNewRecord = function(typeKey) {
+    try {
+      var panel = document.querySelector('.type-panel[data-type="' + typeKey + '"]');
+      if (!panel) return true;
+      var last = loadLastNew();
+      var sig = computeFormSignature(panel);
+      var prev = last[typeKey] || null;
+      if (prev && prev === sig) {
+        if (!window.confirm('Already Exists; Create a duplicate?')) {
+          return false;
+        }
+      }
+      last[typeKey] = sig;
+      saveLastNew(last);
+      return true;
+    } catch(e) {
+      return true;
+    }
+  };
+
+
 
 
 // Expose close handler for inline onclick in upload.html
@@ -337,6 +426,8 @@
       "'": "&#39;"
     }[c]));
   }
+
+  
 
   // ---- simple sortable tables (client-side) ----
   function initSortableTables() {
