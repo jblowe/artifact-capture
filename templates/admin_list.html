@@ -107,9 +107,13 @@
               {% if jfiles %}<a class="btn" href="{{ url_for('admin_record_json', otype=otype, aid=r['id']) }}" target="_blank">JSON</a>{% endif %}
             </td>
             <td class="small">
-              <a class="btn" href="{{ url_for('admin_edit', otype=otype, aid=r['id']) }}">Edit</a>
+              <a class="btn primary icon-btn" href="{{ url_for('admin_edit', otype=otype, aid=r['id']) }}" aria-label="Edit" title="Edit">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M12.146.854a.5.5 0 0 1 .708 0l2.2922.292a.5.5 0 0 1 0 .708l-9.5 9.5a.5.5 0 0 1-.168.11l-4 1.5a.5.5 0 0 1-.65-.65l1.5-4a.5.5 0 0 1 .11-.168l9.5-9.5zM11.207 2L13 3.793 14.293 2.5 12.5.707 11.207 2zM12 4.793 10.207 3 3 10.207V12h1.793L12 4.793z"/></svg>
+              </a>
               <form class="inline" action="{{ url_for('admin_delete', otype=otype, aid=r['id']) }}" method="post" onsubmit="return confirm('Delete {{ meta.label }} {{ r['id'] }}?')">
-                <button class="btn" type="submit">Delete</button>
+                <button class="btn danger icon-btn" type="submit" aria-label="Delete" title="Delete">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M5.5 5.5A.5.5 0 0 1 6 6v7a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5.5a.5.5 0 0 1 .5-.5h.5a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0V6a.5.5 0 0 1-.5-.5z"/><path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3h11V2h-11v1z"/></svg>
+              </button>
               </form>
             </td>
           </tr>
@@ -195,9 +199,13 @@
             {% if jfiles %}<a class="btn" href="{{ url_for('admin_record_json', otype=otype, aid=r['id']) }}" target="_blank">JSON</a>{% endif %}
           </td>
           <td class="small">
-            <a class="btn" href="{{ url_for('admin_edit', otype=otype, aid=r['id']) }}">Edit</a>
+            <a class="btn primary icon-btn" href="{{ url_for('admin_edit', otype=otype, aid=r['id']) }}" aria-label="Edit" title="Edit">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M12.146.854a.5.5 0 0 1 .708 0l2.2922.292a.5.5 0 0 1 0 .708l-9.5 9.5a.5.5 0 0 1-.168.11l-4 1.5a.5.5 0 0 1-.65-.65l1.5-4a.5.5 0 0 1 .11-.168l9.5-9.5zM11.207 2L13 3.793 14.293 2.5 12.5.707 11.207 2zM12 4.793 10.207 3 3 10.207V12h1.793L12 4.793z"/></svg>
+              </a>
             <form class="inline" action="{{ url_for('admin_delete', otype=otype, aid=r['id']) }}" method="post" onsubmit="return confirm('Delete {{ meta.label }} {{ r['id'] }}?')">
-              <button class="btn" type="submit">Delete</button>
+              <button class="btn danger icon-btn" type="submit" aria-label="Delete" title="Delete">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M5.5 5.5A.5.5 0 0 1 6 6v7a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5.5a.5.5 0 0 1 .5-.5h.5a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0V6a.5.5 0 0 1-.5-.5z"/><path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3h11V2h-11v1z"/></svg>
+              </button>
             </form>
           </td>
         </tr>

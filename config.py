@@ -23,14 +23,14 @@ SHOW_LOGO = True  # looks for static/images/logo.svg
 RECORDERS = "RADIO('JB', 'Karen', 'Maprang', 'Nick', 'Non', 'Phai', 'Susan', 'Toey', 'Vince')"
 SEASON = ('Season', 'season', 'TEXT',
           "DROPDOWN('TAP86', 'TAP90', 'TAP92', 'TAP94')")
-CONTEXT = ('Context e.g. X,□,○', 'context', 'TEXT')
+CONTEXT = ('Context e.g. X,□,○', 'context', 'UPPERCASE')
 EX_UNIT = ('Excavation Unit', 'excavation_unit', 'TEXT', "DROPDOWN('SqA', 'SqC', 'Op1')")
-AREA = ('Area', 'area', 'TEXT')
-LEVEL = ('Level', 'level', 'TEXT')
+AREA = ('Area', 'area', 'UPPERCASE')
+LEVEL = ('Level', 'level', 'UPPERCASE')
 EX_DATE = ('Excavation Date', 'excavation_date', 'DATE')
-#TREATMENT = ('Surface Treatment', 'surface_treatment', 'TEXT',
+#TREATMENT = ('Surface Treatment', 'surface_treatment', 'UPPERCASE',
 # "DROPDOWN('red slip',  'black slip',  'cord marking',  'cross-hatch incising',  'interior red slip',  'exterior red slip',  'both sides red slip',  'parallel incised',  'other incised',  'multiple (incising, cord)')"),
-TREATMENT = ('Surface Treatment', 'surface_treatment', 'TEXT')
+TREATMENT = ('Surface Treatment', 'surface_treatment', 'UPPERCASE')
 
 # ('Excavation Unit', 'excavation_unit', 'TEXT',
 #  # 'DROPDOWN('Op1', 'Op2', 'Op3', 'Op4', 'Op5', 'Op6', 'Op7', 'Op8', 'Op9', 'Op10', 'SqA', 'SqB', 'SqC')'),
@@ -57,7 +57,7 @@ object_types = {
              ['tnumber'],
              ['context'],
              ['excavation_date'],
-             ['date_recorded'],
+             # ['date_recorded'],
              ['notes'],
          ],
          'result_rows': [
@@ -84,7 +84,7 @@ object_types = {
              ('Recorders', 'recorders', 'TEXT', RECORDERS),
              ('T-Number', 'tnumber', 'TEXT'),
              SEASON, CONTEXT, EX_UNIT, AREA, LEVEL, EX_DATE,
-             ('Vessel Type', 'vessel_type', 'TEXT',
+             ('Vessel Type', 'vessel_type', 'UPPERCASE',
               "DROPDOWN('hole-mouthed jar', 'open-mouthed jar', 'collared jar')"),
              ('Temper', 'temper', 'TEXT',
               "DROPDOWN('T1', 'T2', 'T3','T4', 'T5', 'T6', 'T7')"),
@@ -93,6 +93,7 @@ object_types = {
              ('Rim Diameter', 'rim_diameter', 'FLOAT'),
              TREATMENT,
              ('Notes', 'notes', 'TEXT'),
+             ('Date recorded', 'date_recorded', 'DATE'),
          ],
          'layout_rows': [
              # ['recorders'],
@@ -137,7 +138,7 @@ object_types = {
          'input_fields': [
              ('Photographer', 'photographer', 'TEXT', RECORDERS),
              SEASON, CONTEXT, EX_UNIT, AREA, LEVEL, EX_DATE,
-             ('Site Name', 'site_name', 'TEXT'),
+             ('Site Name', 'site_name', 'UPPERCASE'),
              ('Shot type', 'shot_type', 'TEXT'),
              ('Date recorded', 'date_recorded', 'TIMESTAMP'),
          ],

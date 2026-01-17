@@ -134,6 +134,72 @@
     }
   };
 
+  window.setSubmitMode = function(typeKey, mode) {
+    try {
+      var panel = document.querySelector('.type-panel[data-type="' + typeKey + '"]');
+      if (!panel) return;
+      var hidden = panel.querySelector('input[type="hidden"][name="submit_mode"]');
+      if (hidden) hidden.value = String(mode || '');
+    } catch(e) {}
+  };
+
+  window.handleNewRecordClick = function(typeKey, btn) {
+    try {
+      var panel = document.querySelector('.type-panel[data-type="' + typeKey + '"]');
+      if (!panel) return true;
+      var form = (btn && btn.closest) ? btn.closest('form') : null;
+      if (!form) return true;
+
+      // Prepare action + mode for server
+      window.setAction(typeKey, 'new_record');
+      window.setSubmitMode(typeKey, 'metadata');
+      if (typeof requirePhoto === 'function') { try { requirePhoto(false); } catch(e) {} }
+
+      var sig = computeFormSignature(panel);
+      var last = loadLastNew();
+
+      // Ask the server if this signature already exists
+      if (btn) {
+        btn.disabled = true;
+        btn.dataset._oldText = btn.textContent;
+        btn.textContent = 'Checking...';
+      }
+
+      var fd = new FormData(form);
+      fetch('/exists', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'fetch' } })
+        .then(function(resp){ return resp.json(); })
+        .then(function(data){
+          var exists = !!(data && data.exists);
+          if (exists) {
+            if (!window.confirm('Already Exists; Create a duplicate?')) {
+              return;
+            }
+          }
+          // Remember last-click signature for this type
+          last[typeKey] = sig;
+          saveLastNew(last);
+          form.submit();
+        })
+        .catch(function(){
+          // Fail open: allow creating a new record
+          last[typeKey] = sig;
+          saveLastNew(last);
+          form.submit();
+        })
+        .finally(function(){
+          if (btn) {
+            btn.disabled = false;
+            if (btn.dataset._oldText) btn.textContent = btn.dataset._oldText;
+          }
+        });
+
+      return false;
+    } catch(e) {
+      return true;
+    }
+  };
+
+
 
 
 

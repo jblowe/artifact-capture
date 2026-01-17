@@ -1,0 +1,13 @@
+{% if images and images|length %}
+<div class="admin-images mt-2">
+  {% for img in images %}
+    <a href="{{ img.full_url }}" target="_blank">
+      <img src="{{ img.thumb_url }}"
+           class="img-thumbnail me-1 mb-1"
+           style="max-height:120px;">
+    </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="text-muted small">No images attached.</div>
+{% endif %}

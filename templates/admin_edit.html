@@ -3,176 +3,104 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  
-<link rel="stylesheet" href="{{ url_for('static', filename='styles/app.css') }}">
-<script defer src="{{ url_for('static', filename='js/app.js') }}"></script>
-<title>Edit {{ meta.label }} {{ r['id'] }}</title>
-  
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles/app.css') }}">
+  <script defer src="{{ url_for('static', filename='js/app.js') }}"></script>
+  <title>Edit {{ meta.label }} {{ r['id'] }}</title>
 </head>
 <body>
 {% include "_banner.html" %}
-  <div class="wrap">
 
-    {% with messages = get_flashed_messages() %}
-      {% if messages %}
-        <div class="flash">
-          {% for m in messages %}<div>{{ m }}</div>{% endfor %}
-        </div>
-      {% endif %}
-    {% endwith %}
+<div class="wrap">
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <div class="flash">
+        {% for m in messages %}<div>{{ m }}</div>{% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
 
-    <div class="card">
-      <div class="card-hd">
-        <div>
-          <div style="font-weight:800;">Edit {{ meta.label }} #{{ r['id'] }}</div>
-          <div class="meta">{% if r['date_updated'] %}Recorded: {{ r['date_updated'] }}{% endif %}</div>
-        </div>
-        <div class="actions">
-          <form method="post" action="{{ url_for('admin_delete', otype=otype, aid=r['id']) }}" style="margin:0;" onsubmit="return confirm('Delete {{ meta.label }} {{ r['id'] }}? This will remove the DB row and all attached files.');">
-            <button class="btn danger" type="submit">Delete</button>
-          </form>
-        </div>
+  <div class="card">
+    <div class="card-hd">
+      <div>
+        <div style="font-weight:800;">Edit {{ meta.label }} #{{ r['id'] }}</div>
+        <div class="meta">{% if r['date_updated'] %}Updated: {{ r['date_updated'] }}{% endif %}</div>
+      </div>
+      <div class="actions">
+        <form method="post" action="{{ url_for('admin_delete', otype=otype, aid=r['id']) }}" style="margin:0;" onsubmit="return confirm('Delete {{ meta.label }} {{ r['id'] }}? This will remove the DB row and all attached files.');">
+          <button class="btn danger icon-btn" type="submit" aria-label="Delete" title="Delete">
+  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M5.5 5.5A.5.5 0 0 1 6 6v7a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5.5a.5.5 0 0 1 .5-.5h.5a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0V6a.5.5 0 0 1-.5-.5z"/><path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3h11V2h-11v1z"/></svg>
+</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div>
+        <form method="post" action="{{ url_for('admin_edit', otype=otype, aid=r['id']) }}">
+          <table class="form-table">
+            <tr>
+              <td class="label">Record ID</td>
+              <td><input type="text" value="{{ r['id'] }}" readonly></td>
+            </tr>
+
+            {% for col in meta.result_fields %}
+              {% set fm = meta.field_meta.get(col, {}) %}
+              {% set widget = fm.get('widget') %}
+              {% set options = fm.get('options') %}
+              {% set val = r[col] if r[col] is not none else '' %}
+
+              <tr>
+                <td class="label">{{ fm.get('label') or col }}</td>
+                <td>
+                  {% if widget == 'constant' %}
+                    <input type="text" name="{{ col }}" value="{{ fm.get('constant_value') or '' }}" readonly>
+
+                  {% elif widget == 'radio' and options %}
+                    {% set selected = (val|fromjson) if val else [] %}
+                    <div class="radio-group">
+                      {% for opt in options %}
+                        <label class="check-item">
+                          <input type="checkbox" name="{{ col }}" value="{{ opt }}" {% if opt in selected %}checked{% endif %}> {{ opt }}
+                        </label>
+                      {% endfor %}
+                    </div>
+
+                  {% elif widget == 'dropdown' and options %}
+                    <select name="{{ col }}">
+                      <option value=""></option>
+                      {% for opt in options %}
+                        <option value="{{ opt }}" {% if val == opt %}selected{% endif %}>{{ opt }}</option>
+                      {% endfor %}
+                    </select>
+
+                  {% else %}
+                    {% if fm.get('server_now') %}
+                      <input type="text" name="{{ col }}" value="{{ val }}" readonly>
+                    {% elif col in ['notes','description'] %}
+                      <textarea name="{{ col }}" rows="3">{{ val }}</textarea>
+                    {% else %}
+                      <input type="text" name="{{ col }}" value="{{ val }}"{% if widget == "uppercase" %} style="text-transform: uppercase;" autocapitalize="characters"{% endif %}>
+                    {% endif %}
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </table>
+
+          <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;">
+            <button class="btn primary" type="submit">Save changes</button>
+            <a class="btn" href="{{ url_for('admin_list', type=otype) }}">Cancel</a>
+          </div>
+          <div class="small" style="margin-top:8px;">Date recorded is auto-generated and not editable.</div>
+        </form>
       </div>
 
-      <div class="grid">
-        <div>
-          <form method="post" action="{{ url_for('admin_edit', otype=otype, aid=r['id']) }}">
-            <table>
-              <tr>
-                <td class="label">Record ID</td>
-                <td><input type="text" value="{{ r['id'] }}" readonly></td>
-              </tr>
-              {# Render all configured (non-system) fields. date_updated is system-managed and shown in the header. #}
-              {# Render fields using result_rows (separate from upload layout_rows). #}
-              <table class="form-table">
-                {% for row in meta.result_rows %}
-                  <tr>
-                    {% for col in row %}
-                      {% if col in meta.field_meta %}
-                        {% set fm = meta.field_meta[col] %}
-                        {% set widget = fm.widget %}
-                        {% set options = fm.options %}
-                        {% set val = r[col] if r[col] is not none else '' %}
-                        <td>
-                          <div class="field">
-                            <div class="field-label">{{ fm.label }}</div>
-
-                            {% if widget == 'constant' %}
-                              <input type="text" name="{{ col }}" value="{{ fm.constant_value }}" readonly>
-
-                            {% elif widget == 'radio' and options %}
-                              {% set selected = (val|fromjson) if val else [] %}
-                              <div class="radio-group">
-                                {% for opt in options %}
-                                  <label class="check-item">
-                                    <input type="checkbox" name="{{ col }}" value="{{ opt }}" {% if opt in selected %}checked{% endif %}> {{ opt }}
-                                  </label>
-                                {% endfor %}
-                              </div>
-
-                            {% elif widget == 'dropdown' and options %}
-                              <select name="{{ col }}">
-                                <option value=""></option>
-                                {% for opt in options %}
-                                  <option value="{{ opt }}" {% if val == opt %}selected{% endif %}>{{ opt }}</option>
-                                {% endfor %}
-                              </select>
-
-                            {% else %}
-                              <input type="text" name="{{ col }}" value="{{ val }}">
-                            {% endif %}
-
-                          </div>
-                        </td>
-                      {% else %}
-                        <td>
-                          <div class="field">
-                            <label class="form-label">{{ col }}</label>
-                            {% if col in ['notes','description'] %}
-                              <textarea name="{{ col }}" rows="3">{{ r[col] or '' }}</textarea>
-                            {% else %}
-                              <input type="text" name="{{ col }}" value="{{ r[col] if r[col] is not none else '' }}">
-                            {% endif %}
-                          </div>
-                        </td>
-                      {% endif %}
-                    {% endfor %}
-                  </tr>
-                {% endfor %}
-              </table>
-                          {% endfor %}
-                        </select>
-                      {% elif col in ['notes','description'] %}
-                        <textarea name="{{ col }}">{{ r[col] or '' }}</textarea>
-                      {% elif t.startswith('INT') %}
-                        <input type="number" step="1" name="{{ col }}" value="{{ r[col] or '' }}">
-                      {% elif t.startswith('FLOAT') or t.startswith('REAL') or t.startswith('DOUBLE') %}
-                        <input type="number" step="any" name="{{ col }}" value="{{ r[col] or '' }}">
-                      {% elif t == 'DATE' %}
-                        <input type="text" class="date-mmddyyyy" name="{{ col }}" placeholder="MM/DD/YYYY" inputmode="numeric"
-                               autocomplete="off" value="{{ (r[col] or '')|mmddyyyy }}">
-                      {% elif t == 'TIMESTAMP' %}
-                        <input type="text" name="{{ col }}" value="{{ r[col] or '' }}" placeholder="YYYY-MM-DDTHH:MM:SS">
-                      {% else %}
-                        <input type="text" name="{{ col }}" value="{{ r[col] or '' }}">
-                      {% endif %}
-                    </td>
-                  </tr>
-                {% endif %}
-              {% endfor %}
-            </table>
-
-            <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;">
-              <button class="btn primary" type="submit">Save changes</button>
-              <a class="btn" href="{{ url_for('admin_list', type=otype) }}">Cancel</a>
-            </div>
-            <div class="small" style="margin-top:8px;">Date recorded is auto-generated and not editable.</div>
-          </form>
-        </div>
-
-        <div class="imgbox">
-          {% set thumbs = (r['thumbs_json']|fromjson) %}
-          {% set images = (r['images_json']|fromjson) %}
-          {% set jfiles = (r['json_files_json']|fromjson) %}
-          {% if thumbs %}
-            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
-              {% for t in thumbs %}
-                {% set i = loop.index0 %}
-                {% if images and (images|length > i) and images[i] %}
-                  {% set href = url_for('serve_upload', fname=images[i]) %}
-                {% else %}
-                  {% set href = url_for('serve_upload', fname=t) %}
-                {% endif %}
-                <a href="{{ href }}" target="_blank">
-                  <img src="{{ url_for('serve_upload', fname=t) }}" alt="thumbnail" style="max-height:90px;width:auto;">
-                </a>
-              {% endfor %}
-            </div>
-          {% elif images %}
-            <a href="{{ url_for('serve_upload', fname=images[-1]) }}" target="_blank">
-              <img src="{{ url_for('serve_upload', fname=images[-1]) }}" alt="image">
-            </a>
-          {% else %}
-            <div class="small">No images attached.</div>
-          {% endif %}
-
-          <div class="small"><strong>Images:</strong> {{ images|length }}</div>
-          {% if GPS_ENABLED and r['gps_lat'] and r['gps_lon'] %}
-            <div class="small"><strong>GPS:</strong> {{ '%.6f'|format(r['gps_lat']) }}, {{ '%.6f'|format(r['gps_lon']) }}</div>
-          {% endif %}
-          {% if jfiles %}
-            <div class="small"><strong>JSON:</strong>
-              <a href="{{ url_for('admin_record_json', otype=otype, aid=r['id']) }}" target="_blank">view</a>
-            </div>
-            <div class="small"><strong>Image JSON files:</strong>
-              {% for jf in jfiles %}
-                <a href="{{ url_for('serve_upload', fname=jf) }}" target="_blank">{{ jf }}</a>{% if not loop.last %}, {% endif %}
-              {% endfor %}
-            </div>
-          {% endif %}
-        </div>
+      <div>
+        {% include "_admin_images.html" %}
       </div>
     </div>
   </div>
+</div>
+
 </body>
 </html>

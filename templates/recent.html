@@ -1,102 +1,95 @@
 <!doctype html>
 <html lang="en">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-
-<link rel="stylesheet" href="{{ url_for('static', filename='styles/app.css') }}">
-<script defer src="{{ url_for('static', filename='js/app.js') }}"></script>
-<title>Recent uploads</title>
-
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles/app.css') }}">
+  <script defer src="{{ url_for('static', filename='js/app.js') }}"></script>
+  <title>Recent</title>
+</head>
 <body>
 {% include "_banner.html" %}
+
 <div class="page">
+  <div class="card">
+    <div class="tabs">
+      {% for k, m in OBJECT_TYPES.items() %}
+        <a class="tab {% if k == otype %}active{% endif %}" href="{{ url_for('recent', type=k, view=view) }}">{{ m.label }}</a>
+      {% endfor %}
+    </div>
 
-  <div class="tabs">
-    {% for k, m in OBJECT_TYPES.items() %}
-      <a class="tab {% if k == otype %}active{% endif %}" href="{{ url_for('recent', type=k) }}">{{ m.label }}</a>
-    {% endfor %}
-  </div>
+    <div class="actions" style="justify-content:flex-start; margin-top:10px;">
+      <a class="btn {% if view == 'para' %}primary{% endif %}" href="{{ url_for('recent', type=otype, view='para') }}">Cards</a>
+      <a class="btn {% if view == 'table' %}primary{% endif %}" href="{{ url_for('recent', type=otype, view='table') }}">Table</a>
+    </div>
 
-  <table>
-    <thead>
-      <tr>
-        <th>ID</th><th>Image</th><th>Fields</th>
-        {% if GPS_ENABLED %}<th>GPS</th>{% endif %}
-        <th>Files</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for r in rows %}
-      {% set thumbs = (r['thumbs_json']|fromjson) %}
-      {% set images = (r['images_json']|fromjson) %}
-      {% set jfiles = (r['json_files_json']|fromjson) %}
-      <tr>
-        <td>{{ r['id'] }}</td>
-        <td>
-          {% if thumbs %}
-            {% set total = thumbs|length %}
-            {% set show = thumbs[(total-2) if total>2 else 0:] %}
-            {% set start = total - (show|length) %}
-            <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">
-              {% for t in show %}
-                {% set i = start + loop.index0 %}
-                {% if images and (images|length > i) and images[i] %}
-                  {% set href = url_for('serve_upload', fname=images[i]) %}
-                {% else %}
-                  {% set href = url_for('serve_upload', fname=t) %}
-                {% endif %}
-                <a href="{{ href }}" target="_blank"><img class="thumb" src="{{ url_for('serve_upload', fname=t) }}" alt=""></a>
+    {% if view == 'table' %}
+      <div style="overflow:auto; margin-top:10px;">
+        <table class="grid-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              {% for col in meta.result_fields %}
+                {% set fm = meta.field_meta.get(col, {}) %}
+                <th>{{ fm.get('label') or col }}</th>
               {% endfor %}
-            </div>
-          {% elif images and images[-1] %}
-            <a href="{{ url_for('serve_upload', fname=images[-1]) }}" target="_blank"><img class="thumb" src="{{ url_for('serve_upload', fname=images[-1]) }}" alt=""></a>
-          {% endif %}
-          {% if images %}<div class="small">{{ images|length }} image(s)</div>{% endif %}
-        </td>
-        <td class="small">
-          {% if r['date_updated'] %}<strong>Date recorded:</strong> {{ r['date_updated'] }}<br>{% endif %}
-          {# Show fields using result_rows (separate from upload layout_rows). #}
-          <table class="form-table">
-            {% for row in meta.result_rows %}
+              <th>Images</th>
+              <th>Updated</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in rows %}
+              {% set images = (r['images_json']|fromjson) %}
               <tr>
-                {% for col in row %}
-                  <td class="small">
-                    {% if r[col] %}
-                      <strong>{{ meta.field_meta[col].label }}:</strong> {{ r[col] }}
-                    {% endif %}
-                  </td>
+                <td class="mono">{{ r['id'] }}</td>
+                {% for col in meta.result_fields %}
+                  <td>{{ r[col] }}</td>
                 {% endfor %}
+                <td class="mono">{{ (images|length) if images else 0 }}</td>
+                <td class="mono">{{ r['date_updated'] or '' }}</td>
               </tr>
             {% endfor %}
-          </table>
-        </td>
+          </tbody>
+        </table>
+      </div>
 
-        {% if GPS_ENABLED %}
-        <td class="small">
-          {% if r['gps_lat'] and r['gps_lon'] %}
-            {{ "%.6f"|format(r['gps_lat']) }}, {{ "%.6f"|format(r['gps_lon']) }}<br>
-            {% set osm, gmaps = maps_links(r['gps_lat'], r['gps_lon']) %}
-            <a class="btn" href="{{ osm }}" target="_blank">OSM</a>
-            <a class="btn" href="{{ gmaps }}" target="_blank">Maps</a>
-          {% else %}
-            —
-          {% endif %}
-        </td>
-        {% endif %}
+    {% else %}
+      {% for r in rows %}
+        {% set images = (r['images_json']|fromjson) %}
+        {% set thumbs = (r['thumbs_json']|fromjson) %}
+        <div class="card" style="margin-top:12px;">
+          <div class="row" style="align-items:flex-start; gap:14px;">
+            <div style="min-width:120px;">
+              {% if thumbs and thumbs[-1] %}
+                <a href="{{ url_for('serve_upload', fname=images[-1] if images else thumbs[-1]) }}" target="_blank">
+                  <img class="thumb" src="{{ url_for('serve_upload', fname=thumbs[-1]) }}" alt="thumb">
+                </a>
+              {% endif %}
+              <div class="small">ID: <span class="mono">{{ r['id'] }}</span></div>
+              {% if images %}<div class="small">Images: {{ images|length }}</div>{% endif %}
+            </div>
 
-        <td class="small">
-          {% if images %}
-            {% if images|length == 1 %}
-              <a class="btn" href="{{ url_for('serve_upload', fname=images[0]) }}" target="_blank">JPEG</a>
-            {% else %}
-              <a class="btn" href="{{ url_for('admin_record_images', otype=otype, aid=r['id']) }}" target="_blank">JPEG</a>
-            {% endif %}
-          {% endif %}
-          {% if jfiles and jfiles[-1] %}<a class="btn" href="{{ url_for('serve_upload', fname=jfiles[-1]) }}" target="_blank">JSON</a>{% endif %}
-        </td>
-      </tr>
+            <div class="small" style="flex:1;">
+              {% for row in meta.result_rows %}
+                <div>
+                  {% for col in row %}
+                    {% set fm = meta.field_meta.get(col, {}) %}
+                    {% if r[col] %}
+                      <strong>{{ fm.get('label') or col }}:</strong> {{ r[col] }}
+                      {% if not loop.last %} · {% endif %}
+                    {% endif %}
+                  {% endfor %}
+                </div>
+              {% endfor %}
+              {% if r['date_updated'] %}<div class="meta">Updated: {{ r['date_updated'] }}</div>{% endif %}
+            </div>
+          </div>
+        </div>
       {% endfor %}
-    </tbody>
-  </table>
+    {% endif %}
+
+  </div>
 </div>
+
 </body>
 </html>

@@ -20,14 +20,14 @@
       {% if last_row["date_updated"] %}
         <div class="small">Date recorded: {{ last_row["date_updated"] }}</div>
       {% endif %}
-      {% if last_row["gps_lat"] and last_row["gps_lon"] %}
+      {% if GPS_ENABLED and last_row["gps_lat"] and last_row["gps_lon"] %}
         <div class="small">
           GPS: {{ "%.6f"|format(last_row["gps_lat"]) }}, {{ "%.6f"|format(last_row["gps_lon"]) }}
           {% set osm, gmaps = maps_links(last_row["gps_lat"], last_row["gps_lon"]) %}
           · <a href="{{ osm }}" target="_blank">OSM</a>
           · <a href="{{ gmaps }}" target="_blank">Maps</a>
         </div>
-      {% else %}
+      {% elif GPS_ENABLED %}
         <div class="small">GPS: not recorded</div>
       {% endif %}
     </div>
@@ -126,14 +126,15 @@
                             <option value="{{ opt }}" {% if (pv.get(col, "") == opt) %}selected{% endif %}>{{ opt }}</option>
                           {% endfor %}
                         </select>
-                      {% elif col == 'notes' or col == 'description' %}
+                                            {% elif col == 'notes' or col == 'description' %}
                         <textarea id="{{ key }}__{{ col }}" name="{{ col }}"{% if is_required %} required{% endif %}>{{ pv.get(col, "") }}</textarea>
                       {% else %}
-                        {% if 'DATE' in sql_type and 'TIME' not in sql_type %}
+                        {% if fm.server_now %}
+                          <input id="{{ key }}__{{ col }}" name="{{ col }}" type="text" value="{{ pv.get(col, '') }}" readonly placeholder="auto">
+                        {% elif 'DATE' in sql_type and 'TIME' not in sql_type %}
                           <input id="{{ key }}__{{ col }}" name="{{ col }}" type="text" class="date-mmddyyyy"
                                  value="{{ pv.get(col, '') }}"
-                                 placeholder="MM/DD/YYYY" inputmode="numeric" autocomplete="off"
-                                 pattern="^(0[1-9]|1[0-2])/(0[1-9]|[12][0-9]|3[01])/[0-9]{4}$"{% if is_required %} required{% endif %}>
+                                 placeholder="MMDDYY or MM/DD/YYYY" inputmode="numeric" autocomplete="off"{% if is_required %} required{% endif %}>
                         {% elif 'TIME' in sql_type %}
                           <input id="{{ key }}__{{ col }}" name="{{ col }}" type="text" class="timestamp-input"
                                  value="{{ pv.get(col, '') }}"
@@ -146,7 +147,7 @@
                                  value="{{ pv.get(col, '') }}"{% if is_required %} required{% endif %}>
                         {% else %}
                           <input id="{{ key }}__{{ col }}" name="{{ col }}" type="text"
-                                 value="{{ pv.get(col, '') }}"{% if is_required %} required{% endif %}>
+                                 value="{{ pv.get(col, '') }}"{% if widget == 'uppercase' %} style="text-transform: uppercase;" autocapitalize="characters"{% endif %}{% if is_required %} required{% endif %}>
                         {% endif %}
                       {% endif %}
                     </td>
@@ -176,13 +177,14 @@
         </table>
 
         <input type="hidden" name="action" id="{{ key }}__action" value="">
+        <input type="hidden" name="submit_mode" id="{{ key }}__submit_mode" value="">
         <div class="actions">
-          <button type="submit" name="submit_mode" value="image" onclick="setAction('{{ key }}','add_image'); requirePhoto(true)">Add image</button>
-          <button type="submit" name="submit_mode" value="metadata" onclick="setAction('{{ key }}','new_record'); requirePhoto(false); return confirmDuplicateNewRecord('{{ key }}')">New Record</button>
+          <button class="btn primary action-btn" type="submit" onclick="setAction('{{ key }}','add_image'); setSubmitMode('{{ key }}','image'); requirePhoto(true)">Add image</button>
+          <button class="btn primary action-btn" type="button" onclick="return handleNewRecordClick('{{ key }}', this)">New Record</button>
           {% if (current_record_by_type or {}).get(key) %}
-          <button type="submit" name="submit_mode" value="metadata" onclick="setAction('{{ key }}','update_record'); requirePhoto(false)">Update Record</button>
+          <button class="btn primary action-btn" type="submit" onclick="setAction('{{ key }}','update_record'); setSubmitMode('{{ key }}','metadata'); requirePhoto(false)">Update Record</button>
           {% endif %}
-          <button type="button" onclick="resetForm('{{ key }}')">Reset</button>
+          <button class="btn primary action-btn" type="button" onclick="resetForm('{{ key }}')">Reset</button>
         </div>
       </form>
     </div>

@@ -124,7 +124,7 @@ TYPE_META = {}
 
 # Columns that are managed by the server and should not be treated like
 # user-configured input fields (e.g., to avoid duplicate display).
-SYSTEM_COLUMNS = {"id", "gps_lat", "gps_lon", "gps_acc", "thumbs_json", "images_json", "json_files_json"}
+SYSTEM_COLUMNS = {"id", "gps_lat", "gps_lon", "gps_acc", "thumbs_json", "images_json", "json_files_json", "date_recorded"}
 
 for otype, cfg in OBJECT_TYPES.items():
     if not isinstance(cfg, dict):
@@ -146,16 +146,28 @@ for otype, cfg in OBJECT_TYPES.items():
         st_up = sql_type_str.strip().upper()
 
         constant_value = None
+        server_now = False
         if st_up == "CONSTANT":
             # A CONSTANT field is rendered read-only with a fixed value, and stored as TEXT in SQLite.
             widget = "constant"
             options = None
             constant_value = str(f[3]) if len(f) > 3 else ""
             sqlite_type = "TEXT"
+            sql_type_str = "TEXT"
+        elif st_up == "UPPERCASE":
+            # UPPERCASE is a TEXT field rendered with CSS text-transform: uppercase.
+            widget = "uppercase"
+            options = None
+            sqlite_type = "TEXT"
+            sql_type_str = "TEXT"
         else:
             widget_raw = f[3] if len(f) > 3 else ""
             widget, options = _parse_widget(widget_raw)
             sqlite_type = sql_type_str
+
+        if str(col).lower() == "date_recorded":
+            # Server-managed timestamp/date set on insert/update.
+            server_now = True
 
         field_meta[col] = {
             "label": flabel,
@@ -165,6 +177,7 @@ for otype, cfg in OBJECT_TYPES.items():
             "widget": widget,
             "options": options,
             "constant_value": constant_value,
+            "server_now": server_now,
             "required": col in required_fields,
         }
 
@@ -534,6 +547,25 @@ def _normalize_date_input(val: str) -> str:
     # We'll also attempt some relaxed parsing below.
     from datetime import datetime
 
+    # Allow compact numeric dates: MMDDYY and MMDDYYYY (e.g., 020286 or 02021986)
+    digits = re.sub(r"\D+", "", v)
+    if len(digits) == 8:
+        try:
+            mo = int(digits[0:2]); d = int(digits[2:4]); y = int(digits[4:8])
+            dt = datetime(y, mo, d)
+            return dt.strftime(DATE_FORMAT)
+        except Exception:
+            pass
+    if len(digits) == 6:
+        try:
+            mo = int(digits[0:2]); d = int(digits[2:4]); yy = int(digits[4:6])
+            y = (2000 + yy) if yy <= 49 else (1900 + yy)
+            dt = datetime(y, mo, d)
+            return dt.strftime(DATE_FORMAT)
+        except Exception:
+            pass
+
+
     # Direct attempts
     for fmt in ("%m/%d/%Y", "%m/%d/%y", "%Y-%m-%d", "%Y/%m/%d", "%Y/%m/%-d", "%Y/%-m/%d", "%Y/%-m/%-d"):
         try:
@@ -705,25 +737,27 @@ def form():
                            prefill_by_type=prefill_by_type,
                            current_record_by_type=session.get('current_record_by_type', {}))
 
-def extract_values(otype, dico):
-    context = dico['context']
-    parts = context.split(',')
-    if len(parts) < 3:
-        raise TypeError("need 3 and only 3 comma-separated values for context: Unit,Area,Level")
-    dico['excavation_unit'] = parts[0].upper().strip()
-    dico['area'] = parts[1].upper().strip()
-    dico['level'] = parts[2].upper().strip()
-    return dico
+
+
 
 def _apply_postprocess_values(otype: str, values: dict) -> dict:
     """Optional post-processing hook.
     It should return a dict (may be the same object) containing values compatible
     with the database schema. Unknown keys are dropped.
     """
+
+    def extract_values(otype, dico):
+        context = dico['context']
+        parts = context.split(',')
+        if len(parts) < 3:
+            raise TypeError("need 3 and only 3 comma-separated values for context: Unit,Area,Level")
+        dico['excavation_unit'] = parts[0].upper().strip()
+        dico['area'] = parts[1].upper().strip()
+        dico['level'] = parts[2].upper().strip()
+        return dico
+
     out = extract_values(otype, dict(values))
 
-    if out is None:
-        out = values
     if not isinstance(out, dict):
         raise TypeError("postprocess_values must return a dict (or None)")
 
@@ -733,6 +767,97 @@ def _apply_postprocess_values(otype: str, values: dict) -> dict:
         cleaned[k] = out.get(k)
     return cleaned
 
+@app.route("/exists", methods=["POST"])
+def exists():
+    """Return whether a record exists for the current metadata values.
+
+    Returns JSON: {exists: bool, id: int|null}
+    """
+    otype = (request.form.get("object_type") or "").strip().lower()
+    if otype not in TYPE_META:
+        return jsonify({"exists": False, "id": None})
+
+    meta = TYPE_META[otype]
+
+    # Coerce values the same way as /submit does (but without requiring a photo).
+    meta_values = {}
+    ts = int(time.time())
+    ts_str = __import__("datetime").datetime.fromtimestamp(ts).strftime(TIMESTAMP_FORMAT)
+
+    for fdef in meta["input_fields"]:
+        _label, col, coltype = fdef[0], fdef[1], (fdef[2] if len(fdef) > 2 else "TEXT")
+        t = (str(coltype or "TEXT")).upper().strip()
+        fm = meta["field_meta"].get(col, {})
+
+        if t.startswith("TIMESTAMP"):
+            meta_values[col] = ts_str
+            continue
+
+        if t == "CONSTANT" or fm.get("widget") == "constant":
+            meta_values[col] = str(fm.get("constant_value") or "")
+            continue
+
+        if fm.get("widget") == "radio":
+            selected = [str(v).strip() for v in request.form.getlist(col) if str(v).strip()]
+            meta_values[col] = json.dumps(selected, ensure_ascii=False, separators=(",", ":")) if selected else None
+            continue
+
+        # Server-managed timestamp/date (e.g., date_recorded)
+
+        if fm.get('server_now'):
+
+            from datetime import datetime
+
+            now = datetime.now()
+
+            meta_values[col] = now.strftime(DATE_FORMAT) if t == 'DATE' else now.strftime(TIMESTAMP_FORMAT)
+
+            continue
+
+
+        raw = (request.form.get(col) or "").strip()
+        if fm.get("widget") == "uppercase" and raw:
+            raw = raw.upper()
+
+        if not raw:
+            meta_values[col] = None
+            continue
+
+        if t.startswith("INT"): 
+            try: meta_values[col] = int(raw)
+            except ValueError: meta_values[col] = None
+        elif t.startswith("FLOAT") or t.startswith("REAL") or t.startswith("DOUBLE"): 
+            try: meta_values[col] = float(raw)
+            except ValueError: meta_values[col] = None
+        elif t == "DATE":
+            meta_values[col] = _normalize_date_input(raw)
+        elif t == "TIMESTAMP":
+            meta_values[col] = _normalize_timestamp_input(raw)
+        else:
+            meta_values[col] = raw
+
+    meta_values = _apply_postprocess_values(otype, meta_values)
+
+    signature_values = {}
+    for fdef in meta["input_fields"]:
+        col, coltype = fdef[1], (fdef[2] if len(fdef) > 2 else "TEXT")
+        t = (str(coltype or "TEXT")).upper().strip()
+        if t.startswith("TIMESTAMP") or str(col).lower() == "date_recorded":
+            continue
+        signature_values[col] = meta_values.get(col)
+
+    meta_signature = json.dumps(signature_values, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+    with get_db() as conn:
+        row = conn.execute(
+            f"SELECT id FROM {otype} WHERE meta_signature=? ORDER BY id DESC LIMIT 1",
+            (meta_signature,),
+        ).fetchone()
+
+    if row:
+        return jsonify({"exists": True, "id": int(row["id"])})
+    return jsonify({"exists": False, "id": None})
+
 @app.route("/submit", methods=["POST"])
 def submit():
     otype = (request.form.get("object_type") or "").strip().lower()
@@ -741,7 +866,8 @@ def submit():
         return redirect(url_for("form"))
 
     meta = TYPE_META[otype]
-    submit_mode = request.form.get("submit_mode", "image")
+    # submit_mode may be supplied by either a submit button (name/value) or a hidden input.
+    submit_mode = (request.form.get("submit_mode") or "image").strip().lower()
     action = (request.form.get("action") or "").strip().lower()
     ts = int(time.time())
     ts_str = __import__("datetime").datetime.fromtimestamp(ts).strftime(TIMESTAMP_FORMAT)
@@ -772,7 +898,23 @@ def submit():
                 meta_values[col] = None
             continue
 
+        # Server-managed timestamp/date (e.g., date_recorded)
+
+        if fm.get('server_now'):
+
+            from datetime import datetime
+
+            now = datetime.now()
+
+            meta_values[col] = now.strftime(DATE_FORMAT) if t == 'DATE' else now.strftime(TIMESTAMP_FORMAT)
+
+            continue
+
+
         raw = (request.form.get(col) or "").strip()
+        if fm.get("widget") == "uppercase" and raw:
+            raw = raw.upper()
+
         if not raw:
             meta_values[col] = None
             continue
@@ -802,6 +944,8 @@ def submit():
     for fdef in meta["input_fields"]:
         col, coltype = fdef[1], (fdef[2] if len(fdef) > 2 else "TEXT")
         t = (str(coltype or "TEXT")).upper().strip()
+        if t.startswith("TIMESTAMP") or str(col).lower() == "date_recorded":
+            continue
         signature_values[col] = meta_values.get(col)
     # Remember the user's most recent inputs per object type (for POST-to-POST continuity).
     prefill_by_type = session.get('prefill_by_type', {})
@@ -1081,18 +1225,33 @@ def submit():
         )
 
         # Update record with new image lists and latest capture context.
-        conn.execute(
-            f"UPDATE {otype} SET images_json=?, thumbs_json=?, webps_json=?, json_files_json=?, "
+        # Also bump date_recorded if configured (server-managed).
+        dr_sql = ''
+        dr_val = None
+        if meta.get('field_meta', {}).get('date_recorded', {}).get('server_now'):
+            from datetime import datetime
+            now = datetime.now()
+            dr_type = (meta.get('field_meta', {}).get('date_recorded', {}).get('sql_type') or 'TEXT').upper().strip()
+            dr_val = now.strftime(DATE_FORMAT) if dr_type == 'DATE' else now.strftime(TIMESTAMP_FORMAT)
+            dr_sql = 'date_recorded=?, '
+
+        sql = (
+            f"UPDATE {otype} SET {dr_sql}images_json=?, thumbs_json=?, webps_json=?, json_files_json=?, "
             "width=?, height=?, timestamp=?, ip=?, user_agent=?, exif_datetime=?, exif_make=?, exif_model=?, exif_orientation=?, gps_lat=?, gps_lon=?, gps_alt=? "
-            "WHERE id=?",
-            (
-                json.dumps(images), json.dumps(thumbs), json.dumps(webps), json.dumps(jfiles),
-                width, height, ts, ip, ua,
-                exif_datetime, exif_make, exif_model, exif_orientation,
-                gps_lat, gps_lon, gps_alt,
-                record_id,
-            ),
+            "WHERE id=?"
         )
+        params = []
+        if dr_sql:
+            params.append(dr_val)
+        params += [
+            json.dumps(images), json.dumps(thumbs), json.dumps(webps), json.dumps(jfiles),
+            width, height, ts, ip, ua,
+            exif_datetime, exif_make, exif_model, exif_orientation,
+            gps_lat, gps_lon, gps_alt,
+            record_id,
+        ]
+
+        conn.execute(sql, tuple(params))
 
     return redirect(url_for("form", last_id=record_id, last_type=otype, type=otype))
 
@@ -1103,6 +1262,11 @@ def recent():
     if otype not in TYPE_META:
         otype = next(iter(TYPE_META.keys()))
     g.current_type = otype
+
+    view = (request.args.get("view") or "para").strip().lower()
+    if view not in ("para", "table"):
+        view = "para"
+
     with get_db() as conn:
         rows = conn.execute(
             f"SELECT * FROM {otype} ORDER BY id DESC LIMIT 100"
@@ -1112,6 +1276,7 @@ def recent():
         rows=rows,
         otype=otype,
         meta=TYPE_META[otype],
+        view=view,
         banner_title=make_banner_title("Recent", TYPE_META[otype]["label"]),
     )
 
@@ -1222,6 +1387,13 @@ def admin_edit(otype, aid):
                 label, col, coltype = f[0], f[1], f[2]
                 t = (coltype or "TEXT").upper()
                 fm = meta["field_meta"].get(col, {})
+
+                if fm.get('server_now'):
+                    # Server-managed timestamp/date (e.g., date_recorded)
+                    from datetime import datetime
+                    now = datetime.now()
+                    updates[col] = now.strftime(DATE_FORMAT) if t == 'DATE' else now.strftime(TIMESTAMP_FORMAT)
+                    continue
                 t = (str(coltype or "TEXT")).upper().strip()
 
                 # Enforce CONSTANT fields as server-controlled values.
@@ -1235,7 +1407,22 @@ def admin_edit(otype, aid):
                     updates[col] = json.dumps(selected, ensure_ascii=False, separators=(",", ":")) if selected else None
                     continue
 
+                # Server-managed timestamp/date (e.g., date_recorded)
+
+                if fm.get('server_now'):
+
+                    from datetime import datetime
+
+                    now = datetime.now()
+
+                    updates[col] = now.strftime(DATE_FORMAT) if t == 'DATE' else now.strftime(TIMESTAMP_FORMAT)
+
+                    continue
+
+
                 raw = (request.form.get(col) or "").strip()
+                if fm.get("widget") == "uppercase" and raw:
+                    raw = raw.upper()
                 if not raw:
                     updates[col] = None
                 elif t.startswith("INT"):
@@ -1254,6 +1441,13 @@ def admin_edit(otype, aid):
                     updates[col] = _normalize_timestamp_input(raw)
                 else:
                     updates[col] = raw
+            # Server-managed date_recorded: set on every admin save
+            if meta.get('field_meta', {}).get('date_recorded', {}).get('server_now'):
+                from datetime import datetime
+                now = datetime.now()
+                dr_type = (meta['field_meta']['date_recorded'].get('sql_type') or 'TEXT').upper().strip()
+                updates['date_recorded'] = now.strftime(DATE_FORMAT) if dr_type == 'DATE' else now.strftime(TIMESTAMP_FORMAT)
+
             if updates:
                 set_clause = ", ".join([f"{c}=?" for c in updates.keys()])
                 params = list(updates.values()) + [aid]
