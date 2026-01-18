@@ -27,24 +27,86 @@
     try {
       var panel = document.querySelector('.type-panel[data-type="' + typeKey + '"]');
       if (!panel) return;
-      var form = panel.querySelector("form.captureForm");
-      if (!form) return;
 
-      form.reset();
+      // IMPORTANT: form.reset() only restores *default* values (what was rendered by Jinja)
+      // and may look like it "does nothing". Users expect a true clear.
+      var els = panel.querySelectorAll('input, select, textarea');
+      for (var i = 0; i < els.length; i++) {
+        var el = els[i];
+        var name = el.getAttribute('name') || '';
+        if (!name) continue;
+        if (name === 'action' || name === 'submit_mode') continue;
+
+        // Do not clear server-managed/readonly fields (e.g., date_recorded)
+        if (el.hasAttribute('readonly')) continue;
+
+        var tag = (el.tagName || '').toLowerCase();
+        var type = (el.getAttribute('type') || '').toLowerCase();
+
+        if (type === 'radio' || type === 'checkbox') {
+          el.checked = false;
+          continue;
+        }
+        if (type === 'file') {
+          el.value = '';
+          continue;
+        }
+        if (tag === 'select') {
+          el.selectedIndex = 0;
+          el.value = '';
+          continue;
+        }
+        el.value = '';
+      }
 
       // Clear GPS hidden fields (by name, IDs are dynamic)
       var lat = panel.querySelector('input[name="gps_lat"]');
       var lon = panel.querySelector('input[name="gps_lon"]');
       var acc = panel.querySelector('input[name="gps_acc"]');
-      if (lat) lat.value = "";
-      if (lon) lon.value = "";
-      if (acc) acc.value = "";
+      if (lat) lat.value = '';
+      if (lon) lon.value = '';
+      if (acc) acc.value = '';
 
       // Restore GPS status text if present
-      var statusEl = panel.querySelector(".gps_status");
-      if (statusEl) statusEl.textContent = "Tap to capture location";
+      var statusEl = panel.querySelector('.gps_status');
+      if (statusEl) statusEl.textContent = 'Tap to capture location';
     } catch (e) {}
   };
+
+  window.resetSelectedFields = function (typeKey) {
+    // Clear only the fields listed in config.py object_types[...]['fields_to_reset']
+    try {
+      var panel = document.querySelector('.type-panel[data-type="' + typeKey + '"]');
+      if (!panel) return;
+      var raw = panel.getAttribute('data-reset-fields') || '[]';
+      var fields = [];
+      try { fields = JSON.parse(raw) || []; } catch (e) { fields = []; }
+      if (!Array.isArray(fields) || fields.length === 0) return;
+
+      fields.forEach(function(name){
+        if (!name) return;
+        var els = panel.querySelectorAll('[name="' + name + '"]');
+        if (!els || !els.length) return;
+        for (var i=0;i<els.length;i++) {
+          var el = els[i];
+          if (el.hasAttribute('readonly')) continue;
+          var tag = (el.tagName || '').toLowerCase();
+          var type = (el.getAttribute('type') || '').toLowerCase();
+          if (type === 'radio' || type === 'checkbox') {
+            el.checked = false;
+            continue;
+          }
+          if (tag === 'select') {
+            el.selectedIndex = 0;
+            el.value = '';
+            continue;
+          }
+          el.value = '';
+        }
+      });
+    } catch (e) {}
+  };
+
 
   // --- workflow helpers (New Record / Add image / Update Record) ---
   window.setAction = function(typeKey, action) {

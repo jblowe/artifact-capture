@@ -6,116 +6,120 @@
 <script defer src="{{ url_for('static', filename='js/app.js') }}"></script>
 <title>{{ APP_BRAND }}</title>
 
-
 <body>
 {% include "_banner.html" %}
 <div class="page">
 
-{% if last_row and last_type and last_meta %}
-  <div class="card card-last" id="lastCard">
-    <button type="button" class="card-close" onclick="hideLastCard()">×</button>
-
-    <div>
-      <strong>Saved {{ last_meta.label }} ID {{ last_row["id"] }}</strong>
-      {% if last_row["date_updated"] %}
-        <div class="small">Date recorded: {{ last_row["date_updated"] }}</div>
-      {% endif %}
-      {% if GPS_ENABLED and last_row["gps_lat"] and last_row["gps_lon"] %}
-        <div class="small">
-          GPS: {{ "%.6f"|format(last_row["gps_lat"]) }}, {{ "%.6f"|format(last_row["gps_lon"]) }}
-          {% set osm, gmaps = maps_links(last_row["gps_lat"], last_row["gps_lon"]) %}
-          · <a href="{{ osm }}" target="_blank">OSM</a>
-          · <a href="{{ gmaps }}" target="_blank">Maps</a>
-        </div>
-      {% elif GPS_ENABLED %}
-        <div class="small">GPS: not recorded</div>
-      {% endif %}
-    </div>
-
-    <div class="card-last-inner">
-      <div class="card-last-col">
-        {% set thumbs = (last_row["thumbs_json"]|fromjson) %}
-        {% set images = (last_row["images_json"]|fromjson) %}
-        {% if thumbs %}
-          <div class="thumb-strip">
-            {% for t in thumbs %}
-              {% set i = loop.index0 %}
-              {% if images and (images|length > i) and images[i] %}
-                {% set href = url_for('serve_upload', fname=images[i]) %}
-              {% else %}
-                {% set href = url_for('serve_upload', fname=t) %}
-              {% endif %}
-              <a href="{{ href }}" target="_blank"><img class="thumb" src="{{ url_for('serve_upload', fname=t) }}" alt="thumbnail"></a>
-            {% endfor %}
-          </div>
-        {% elif images and images[-1] %}
-          <a href="{{ url_for('serve_upload', fname=images[-1]) }}" target="_blank">
-            <img class="thumb" src="{{ url_for('serve_upload', fname=images[-1]) }}" alt="image">
-          </a>
+  {% if last_row and last_type and last_meta %}
+    <div class="card card-last" id="lastCard">
+      <button type="button" class="card-close" onclick="hideLastCard()">×</button>
+      <div>
+        <strong>Saved {{ last_meta.label }} ID {{ last_row["id"] }}</strong>
+        {% if last_row["date_updated"] %}
+          <div class="small">Date recorded: {{ last_row["date_updated"] }}</div>
         {% endif %}
-        {% if images %}
-          <div class="small">Images attached: {{ images|length }}</div>
+        {% if GPS_ENABLED and last_row["gps_lat"] and last_row["gps_lon"] %}
+          <div class="small">
+            GPS: {{ "%.6f"|format(last_row["gps_lat"]) }}, {{ "%.6f"|format(last_row["gps_lon"]) }}
+            {% set osm, gmaps = maps_links(last_row["gps_lat"], last_row["gps_lon"]) %}
+            · <a href="{{ osm }}" target="_blank">OSM</a>
+            · <a href="{{ gmaps }}" target="_blank">Maps</a>
+          </div>
+        {% elif GPS_ENABLED %}
+          <div class="small">GPS: not recorded</div>
         {% endif %}
       </div>
 
-      <div class="card-last-col small">
-        {% for f in last_meta.display_fields %}
-          {% set label = f[0] %}
-          {% set col   = f[1] %}          {% if last_row[col] %}
+      <div class="card-last-inner">
+        <div class="card-last-col">
+          {% set thumbs = (last_row["thumbs_json"]|fromjson) %}
+          {% set images = (last_row["images_json"]|fromjson) %}
+          {% if thumbs %}
+            <div class="thumb-strip">
+              {% for t in thumbs %}
+                {% set i = loop.index0 %}
+                {% if images and (images|length > i) and images[i] %}
+                  {% set href = url_for('serve_upload', fname=images[i]) %}
+                {% else %}
+                  {% set href = url_for('serve_upload', fname=t) %}
+                {% endif %}
+                <a href="{{ href }}" target="_blank"><img class="thumb" src="{{ url_for('serve_upload', fname=t) }}"
+                                                          alt="thumbnail"></a>
+              {% endfor %}
+            </div>
+          {% elif images and images[-1] %}
+            <a href="{{ url_for('serve_upload', fname=images[-1]) }}" target="_blank">
+              <img class="thumb" src="{{ url_for('serve_upload', fname=images[-1]) }}" alt="image">
+            </a>
+          {% endif %}
+          {% if images %}
+            <div class="small">Images attached: {{ images|length }}</div>
+          {% endif %}
+        </div>
+
+        <div class="card-last-col small">
+          {% for f in last_meta.display_fields %}
+            {% set label = f[0] %}
+            {% set col   = f[1] %}          {% if last_row[col] %}
             <strong>{{ label }}:</strong> {{ last_row[col] }}<br>
           {% endif %}
-        {% endfor %}
-        {% set jfiles = (last_row["json_files_json"]|fromjson) %}
-        {% if jfiles %}
-          <strong>JSON:</strong>
-          <a href="{{ url_for('serve_upload', fname=jfiles[-1]) }}" target="_blank">{{ jfiles[-1] }}</a>
-        {% endif %}
+          {% endfor %}
+          {% set jfiles = (last_row["json_files_json"]|fromjson) %}
+          {% if jfiles %}
+            <strong>JSON:</strong>
+            <a href="{{ url_for('serve_upload', fname=jfiles[-1]) }}" target="_blank">{{ jfiles[-1] }}</a>
+          {% endif %}
+        </div>
       </div>
     </div>
-  </div>
-{% endif %}
-
-{% with messages = get_flashed_messages() %}
-  {% if messages %}
-    <div class="card small">{{ messages[-1] }}</div>
   {% endif %}
-{% endwith %}
 
-<div class="card">
-  <div class="tabs">
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <div class="card small">{{ messages[-1] }}</div>
+    {% endif %}
+  {% endwith %}
+
+  <div class="card">
+    <div class="tabs">
+      {% for key, meta in OBJECT_TYPES.items() %}
+        <a class="tab {% if key == selected_type %}active{% endif %}"
+           href="{{ url_for('form', type=key) }}">{{ meta.label }}</a>
+      {% endfor %}
+    </div>
+
     {% for key, meta in OBJECT_TYPES.items() %}
-      <a class="tab {% if key == selected_type %}active{% endif %}" href="{{ url_for('form', type=key) }}">{{ meta.label }}</a>
-    {% endfor %}
-  </div>
+      <div class="type-panel" data-type="{{ key }}" data-reset-fields='{{ (meta.fields_to_reset or []) | tojson }}'
+           style="{% if key != selected_type %}display:none{% endif %}">
+        {% set pv = prefill_by_type.get(key, {}) %}
+        <form class="captureForm" action="/submit" method="post" enctype="multipart/form-data" autocomplete="on">
+          <input type="hidden" name="object_type" value="{{ key }}">
 
-  {% for key, meta in OBJECT_TYPES.items() %}
-    <div class="type-panel" data-type="{{ key }}" style="{% if key != selected_type %}display:none{% endif %}">
-      {% set pv = prefill_by_type.get(key, {}) %}
-      <form class="captureForm" action="/submit" method="post" enctype="multipart/form-data" autocomplete="on">
-        <input type="hidden" name="object_type" value="{{ key }}">
-
-        <table class="form-table">
-          {% for row in meta.layout_rows %}
-            <tr>
-              {% for col in row %}
-                {% if col in meta.field_meta %}
-                  {% set fm = meta.field_meta[col] %}
-                  {% set label = fm.label %}
-                  {% set sql_type = (fm.sql_type or 'TEXT')|upper %}
-                  {% set widget = fm.widget %}
-                  {% set options = fm.options %}
-                  {% set is_required = fm.required %}
-                                      <td class="form-label">
-                      <label for="{{ key }}__{{ col }}">{{ label }}{% if is_required %}<span class="required-mark">*</span>{% endif %}</label>
+          <table class="form-table">
+            {% for row in meta.layout_rows %}
+              <tr>
+                {% for col in row %}
+                  {% if col in meta.field_meta %}
+                    {% set fm = meta.field_meta[col] %}
+                    {% set label = fm.label %}
+                    {% set sql_type = (fm.sql_type or 'TEXT')|upper %}
+                    {% set widget = fm.widget %}
+                    {% set options = fm.options %}
+                    {% set is_required = fm.required %}
+                    <td class="form-label">
+                      <label for="{{ key }}__{{ col }}">
+                        {{ label }}{% if is_required %}<span class="required-mark">*</span>{% endif %}</label>
                     </td>
                     <td class="form-input">
                       {% if widget == 'constant' %}
-                        <input id="{{ key }}__{{ col }}" name="{{ col }}" type="text" value="{{ fm.constant_value }}" readonly{% if is_required %} required{% endif %}>
+                        <input id="{{ key }}__{{ col }}" name="{{ col }}" type="text" value="{{ fm.constant_value }}"
+                               readonly{% if is_required %} required{% endif %}>
                       {% elif widget == 'radio' and options %}
                         <div class="radio-group">
                           {% for opt in options %}
                             <label class="check-item">
-                              <input type="checkbox" name="{{ col }}" value="{{ opt }}" {% if opt in (pv.get(col, []) or []) %}checked{% endif %}> {{ opt }}
+                              <input type="checkbox" name="{{ col }}" value="{{ opt }}"
+                                     {% if opt in (pv.get(col, []) or []) %}checked{% endif %}> {{ opt }}
                             </label>
                           {% endfor %}
                         </div>
@@ -123,22 +127,27 @@
                         <select id="{{ key }}__{{ col }}" name="{{ col }}"{% if is_required %} required{% endif %}>
                           <option value=""></option>
                           {% for opt in options %}
-                            <option value="{{ opt }}" {% if (pv.get(col, "") == opt) %}selected{% endif %}>{{ opt }}</option>
+                            <option value="{{ opt }}"
+                                    {% if (pv.get(col, "") == opt) %}selected{% endif %}>{{ opt }}</option>
                           {% endfor %}
                         </select>
-                                            {% elif col == 'notes' or col == 'description' %}
-                        <textarea id="{{ key }}__{{ col }}" name="{{ col }}"{% if is_required %} required{% endif %}>{{ pv.get(col, "") }}</textarea>
+                      {% elif col == 'notes' or col == 'description' %}
+                        <textarea id="{{ key }}__{{ col }}" name="{{ col }}"{% if is_required %}
+                                  required{% endif %}>{{ pv.get(col, "") }}</textarea>
                       {% else %}
                         {% if fm.server_now %}
-                          <input id="{{ key }}__{{ col }}" name="{{ col }}" type="text" value="{{ pv.get(col, '') }}" readonly placeholder="auto">
+                          <input id="{{ key }}__{{ col }}" name="{{ col }}" type="text" value="{{ pv.get(col, '') }}"
+                                 readonly placeholder="auto">
                         {% elif 'DATE' in sql_type and 'TIME' not in sql_type %}
                           <input id="{{ key }}__{{ col }}" name="{{ col }}" type="text" class="date-mmddyyyy"
                                  value="{{ pv.get(col, '') }}"
-                                 placeholder="MMDDYY or MM/DD/YYYY" inputmode="numeric" autocomplete="off"{% if is_required %} required{% endif %}>
+                                 placeholder="MMDDYY or MM/DD/YYYY" inputmode="numeric" autocomplete="off"
+                                  {% if is_required %} required{% endif %}>
                         {% elif 'TIME' in sql_type %}
                           <input id="{{ key }}__{{ col }}" name="{{ col }}" type="text" class="timestamp-input"
                                  value="{{ pv.get(col, '') }}"
-                                 placeholder="YYYY-MM-DDTHH:MM:SS" autocomplete="off"{% if is_required %} required{% endif %}>
+                                 placeholder="YYYY-MM-DDTHH:MM:SS" autocomplete="off"{% if is_required %}
+                                 required{% endif %}>
                         {% elif sql_type.startswith('INT') %}
                           <input id="{{ key }}__{{ col }}" name="{{ col }}" type="number" step="1"
                                  value="{{ pv.get(col, '') }}"{% if is_required %} required{% endif %}>
@@ -147,63 +156,78 @@
                                  value="{{ pv.get(col, '') }}"{% if is_required %} required{% endif %}>
                         {% else %}
                           <input id="{{ key }}__{{ col }}" name="{{ col }}" type="text"
-                                 value="{{ pv.get(col, '') }}"{% if widget == 'uppercase' %} style="text-transform: uppercase;" autocapitalize="characters"{% endif %}{% if is_required %} required{% endif %}>
+                                 value="{{ pv.get(col, '') }}"{% if widget == 'uppercase' %}
+                                 style="text-transform: uppercase;" autocapitalize="characters"{% endif %}
+                          {% if is_required %} required{% endif %}>
                         {% endif %}
                       {% endif %}
                     </td>
                   {% endif %}
-              {% endfor %}
+                {% endfor %}
+              </tr>
+            {% endfor %}
+
+            <tr>
+              <td class="form-label"><label for="{{ key }}__photo">Photo<span class="required-mark">*</span></label>
+              </td>
+              <td class="form-input"><input id="{{ key }}__photo" type="file" name="photo" accept="image/*"
+                                            capture="environment"></td>
             </tr>
-          {% endfor %}
 
-          <tr>
-            <td class="form-label"><label for="{{ key }}__photo">Photo<span class="required-mark">*</span></label></td>
-            <td class="form-input"><input id="{{ key }}__photo" type="file" name="photo" accept="image/*" capture="environment"></td>
-          </tr>
+            {% if GPS_ENABLED %}
+              <tr>
+                <td class="form-label"><label>GPS</label></td>
+                <td class="form-input">
+                  <div class="gps_status">requesting location…</div>
+                </td>
+              </tr>
+              <tr style="display:none">
+                <td colspan="2">
+                  <input type="hidden" id="{{ key }}__gps_lat" name="gps_lat">
+                  <input type="hidden" id="{{ key }}__gps_lon" name="gps_lon">
+                  <input type="hidden" id="{{ key }}__gps_acc" name="gps_acc">
+                </td>
+              </tr>
+            {% endif %}
+          </table>
+          <input type="hidden" name="action" id="{{ key }}__action" value="">
+          <input type="hidden" name="submit_mode" id="{{ key }}__submit_mode" value="">
+          <div class="actions">
+            <button class="btn primary action-btn" type="submit"
+                    onclick="setAction('{{ key }}','add_image'); setSubmitMode('{{ key }}','image'); requirePhoto(true)">
+              Add image
+            </button>
+            <button class="btn primary action-btn" type="button"
+                    onclick="return handleNewRecordClick('{{ key }}', this)">New
+            </button>
+            {% if (current_record_by_type or {}).get(key) %}
+              <button class="btn primary action-btn" type="submit"
+                      onclick="setAction('{{ key }}','update_record'); setSubmitMode('{{ key }}','metadata'); requirePhoto(false)">
+                Update
+              </button>
+            {% endif %}
+            <button class="btn primary action-btn" type="button" onclick="resetSelectedFields('{{ key }}')"
+                    title="Clears only fields listed in fields_to_reset">Reset Selected
+            </button>
+            <button class="btn primary action-btn" type="button" onclick="resetForm('{{ key }}')">Reset All</button>
+          </div>
+        </form>
+      </div>
+    {% endfor %}
+  </div>
 
-          {% if GPS_ENABLED %}
-<tr>
-  <td class="form-label"><label>GPS</label></td>
-  <td class="form-input">
-    <div class="gps_status">requesting location…</div>
-  </td>
-</tr>
-<tr style="display:none"><td colspan="2">
-  <input type="hidden" id="{{ key }}__gps_lat" name="gps_lat">
-  <input type="hidden" id="{{ key }}__gps_lon" name="gps_lon">
-  <input type="hidden" id="{{ key }}__gps_acc" name="gps_acc">
-</td></tr>
-{% endif %}
-        </table>
-
-        <input type="hidden" name="action" id="{{ key }}__action" value="">
-        <input type="hidden" name="submit_mode" id="{{ key }}__submit_mode" value="">
-        <div class="actions">
-          <button class="btn primary action-btn" type="submit" onclick="setAction('{{ key }}','add_image'); setSubmitMode('{{ key }}','image'); requirePhoto(true)">Add image</button>
-          <button class="btn primary action-btn" type="button" onclick="return handleNewRecordClick('{{ key }}', this)">New Record</button>
-          {% if (current_record_by_type or {}).get(key) %}
-          <button class="btn primary action-btn" type="submit" onclick="setAction('{{ key }}','update_record'); setSubmitMode('{{ key }}','metadata'); requirePhoto(false)">Update Record</button>
-          {% endif %}
-          <button class="btn primary action-btn" type="button" onclick="resetForm('{{ key }}')">Reset</button>
-        </div>
-      </form>
-    </div>
-  {% endfor %}
 </div>
-
-</div>
-
 
 
 <script>
-document.addEventListener("input", (e) => {
-  const el = e.target;
-  if (!el.classList || !el.classList.contains("date-mmddyyyy")) return;
-  let v = (el.value || "").replace(/[^\d]/g, "").slice(0, 8);
-  if (v.length >= 5) el.value = v.slice(0,2) + "/" + v.slice(2,4) + "/" + v.slice(4);
-  else if (v.length >= 3) el.value = v.slice(0,2) + "/" + v.slice(2);
-  else el.value = v;
-});
+    document.addEventListener("input", (e) => {
+        const el = e.target;
+        if (!el.classList || !el.classList.contains("date-mmddyyyy")) return;
+        let v = (el.value || "").replace(/[^\d]/g, "").slice(0, 8);
+        if (v.length >= 5) el.value = v.slice(0, 2) + "/" + v.slice(2, 4) + "/" + v.slice(4);
+        else if (v.length >= 3) el.value = v.slice(0, 2) + "/" + v.slice(2);
+        else el.value = v;
+    });
 </script>
 
 </body>

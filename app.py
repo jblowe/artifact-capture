@@ -195,6 +195,7 @@ for otype, cfg in OBJECT_TYPES.items():
             cleaned.append(cols)
     result_rows_effective = cleaned
 
+    fields_to_reset = list(cfg.get('fields_to_reset') or [])
     TYPE_META[otype] = {
         "label": label,
         "input_fields": input_fields,
@@ -206,6 +207,7 @@ for otype, cfg in OBJECT_TYPES.items():
         "result_fields": [col for row in result_rows_effective for col in row],
         "required_fields": required_fields,
         "filename_format": filename_format,
+        "fields_to_reset": fields_to_reset,
         "field_meta": field_meta,
     }
 
