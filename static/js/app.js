@@ -108,6 +108,104 @@
   };
 
 
+
+
+  // --- photo button labeling (mobile vs desktop) ---
+  function isMobileCaptureDevice() {
+    try {
+      if (window.matchMedia && window.matchMedia('(pointer:coarse)').matches) return true;
+      var ua = (navigator.userAgent || '').toLowerCase();
+      return ua.includes('android') || ua.includes('iphone') || ua.includes('ipad') || ua.includes('ipod');
+    } catch (e) {
+      return false;
+    }
+  }
+
+  window.updatePhotoFilename = function(typeKey, inputEl) {
+    try {
+      var nameEl = document.getElementById(typeKey + '__photo_name');
+      if (!nameEl) return;
+      var files = (inputEl && inputEl.files) ? inputEl.files : null;
+      if (files && files.length) {
+        nameEl.textContent = files[0].name;
+      } else {
+        nameEl.textContent = '';
+      }
+    } catch(e) {}
+  };
+
+  function initPhotoButtons() {
+    var txt = isMobileCaptureDevice() ? 'Take photo' : 'Choose file';
+    var nodes = document.querySelectorAll('.file-btn-text');
+    for (var i=0;i<nodes.length;i++) nodes[i].textContent = txt;
+  }
+
+  // --- copy fields between object types ---
+  window.copyFrom = function(targetType) {
+    try {
+      var targetPanel = document.querySelector('.type-panel[data-type="' + targetType + '"]');
+      if (!targetPanel) return;
+      var srcType = (targetPanel.getAttribute('data-copy-from') || '').trim();
+      if (!srcType) return;
+      var srcPanel = document.querySelector('.type-panel[data-type="' + srcType + '"]');
+      if (!srcPanel) return;
+
+      var raw = targetPanel.getAttribute('data-layout-fields') || '[]';
+      var fields = [];
+      try { fields = JSON.parse(raw) || []; } catch(e) { fields = []; }
+      if (!Array.isArray(fields) || fields.length === 0) return;
+
+      fields.forEach(function(name){
+        if (!name) return;
+        // Skip non-user controls
+        if (name === 'action' || name === 'submit_mode' || name === 'object_type' || name === 'photo') return;
+
+        var srcEls = srcPanel.querySelectorAll('[name="' + name + '"]');
+        var tgtEls = targetPanel.querySelectorAll('[name="' + name + '"]');
+        if (!srcEls || !srcEls.length || !tgtEls || !tgtEls.length) return;
+
+        // If target is readonly, skip
+        for (var j=0;j<tgtEls.length;j++) { if (tgtEls[j].hasAttribute('readonly')) return; }
+
+        // Checkbox group
+        var srcTypeAttr = (srcEls[0].getAttribute('type') || '').toLowerCase();
+        var tgtTypeAttr = (tgtEls[0].getAttribute('type') || '').toLowerCase();
+        if (srcTypeAttr === 'checkbox' || tgtTypeAttr === 'checkbox') {
+          var selected = {};
+          for (var i=0;i<srcEls.length;i++) {
+            if (srcEls[i].checked) selected[srcEls[i].value] = true;
+          }
+          for (var k=0;k<tgtEls.length;k++) {
+            tgtEls[k].checked = !!selected[tgtEls[k].value];
+          }
+          return;
+        }
+
+        // Radio group
+        if (srcTypeAttr === 'radio' || tgtTypeAttr === 'radio') {
+          var chosen = null;
+          for (var i2=0;i2<srcEls.length;i2++) { if (srcEls[i2].checked) { chosen = srcEls[i2].value; break; } }
+          for (var k2=0;k2<tgtEls.length;k2++) { tgtEls[k2].checked = (chosen !== null && tgtEls[k2].value === chosen); }
+          return;
+        }
+
+        // Select
+        if ((srcEls[0].tagName || '').toLowerCase() === 'select' || (tgtEls[0].tagName || '').toLowerCase() === 'select') {
+          tgtEls[0].value = srcEls[0].value;
+          return;
+        }
+
+        // Textarea / text / number etc
+        tgtEls[0].value = srcEls[0].value;
+      });
+    } catch(e) {}
+  };
+
+  // Run small initializers
+  document.addEventListener('DOMContentLoaded', function(){
+    try { initPhotoButtons(); } catch(e) {}
+  });
+
   // --- workflow helpers (New Record / Add image / Update Record) ---
   window.setAction = function(typeKey, action) {
     try {

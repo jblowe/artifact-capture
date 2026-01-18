@@ -23,14 +23,14 @@ SHOW_LOGO = True  # looks for static/images/logo.svg
 RECORDERS = "RADIO('JB', 'Karen', 'Maprang', 'Nick', 'Non', 'Phai', 'Susan', 'Toey', 'Vince')"
 SEASON = ('Season', 'season', 'TEXT',
           "DROPDOWN('TAP86', 'TAP90', 'TAP92', 'TAP94')")
-CONTEXT = ('Context e.g. X,□,○', 'context', 'TEXT')
+CONTEXT = ('Context e.g. X,□,○', 'context', 'UPPERCASE')
 EX_UNIT = ('Excavation Unit', 'excavation_unit', 'TEXT', "DROPDOWN('SqA', 'SqC', 'Op1')")
-AREA = ('Area', 'area', 'TEXT')
-LEVEL = ('Level', 'level', 'TEXT')
+AREA = ('Area', 'area', 'UPPERCASE')
+LEVEL = ('Level', 'level', 'UPPERCASE')
 EX_DATE = ('Excavation Date', 'excavation_date', 'DATE')
-#TREATMENT = ('Surface Treatment', 'surface_treatment', 'TEXT',
+#TREATMENT = ('Surface Treatment', 'surface_treatment', 'UPPERCASE',
 # "DROPDOWN('red slip',  'black slip',  'cord marking',  'cross-hatch incising',  'interior red slip',  'exterior red slip',  'both sides red slip',  'parallel incised',  'other incised',  'multiple (incising, cord)')"),
-TREATMENT = ('Surface Treatment', 'surface_treatment', 'TEXT')
+TREATMENT = ('Surface Treatment', 'surface_treatment', 'UPPERCASE')
 
 # ('Excavation Unit', 'excavation_unit', 'TEXT',
 #  # 'DROPDOWN('Op1', 'Op2', 'Op3', 'Op4', 'Op5', 'Op6', 'Op7', 'Op8', 'Op9', 'Op10', 'SqA', 'SqB', 'SqC')'),
@@ -43,7 +43,9 @@ object_types = {
 
     'bags':
         {'label': 'Bags',
-         'filename_format': 'BAG_{season}_Unit{unit}_T{tnum}_Lot_{lot}_Area{area}_Level_{level}_ID{record_id}',
+         'filename_format': 'BAG_{season}_Unit{excavation_unit}_T{tnumber}_Lot_{lot}_Area{area}_Level_{level}_ID{record_id}',
+         'fields_to_reset': ['context', 'tnumber', 'excavation_date', 'notes'],
+         'copy_from': 'artifacts',
          'input_fields': [
              ('Recorders', 'recorders', 'TEXT', RECORDERS),
              ('T-Number', 'tnumber', 'TEXT'),
@@ -57,11 +59,11 @@ object_types = {
              ['tnumber'],
              ['context'],
              ['excavation_date'],
-             ['date_recorded'],
+             # ['date_recorded'],
              ['notes'],
          ],
          'result_rows': [
-             ['recorders'],
+             # ['recorders'],
              ['season', 'tnumber'],
              ['excavation_unit', 'area', 'level'],
              ['context', 'excavation_date', 'date_recorded'],
@@ -79,12 +81,14 @@ object_types = {
 
     'artifacts':
         {'label': 'Artifacts',
-         'filename_format': 'ART_{season}_Unit{unit}_T{tnum}_Lot_{lot}_Area{area}_Level_{level}_ID{record_id}',
+         'filename_format': 'ART_{season}_Unit{excavation_unit}_T{tnumber}_Lot_{lot}_Area{area}_Level_{level}_ID{record_id}',
+         'fields_to_reset': ['temper', 'typology_number', 'collar_height', 'rim_diameter', 'surface_treatment', 'notes'],
+         'copy_from': 'bags',
          'input_fields': [
              ('Recorders', 'recorders', 'TEXT', RECORDERS),
              ('T-Number', 'tnumber', 'TEXT'),
              SEASON, CONTEXT, EX_UNIT, AREA, LEVEL, EX_DATE,
-             ('Vessel Type', 'vessel_type', 'TEXT',
+             ('Vessel Type', 'vessel_type', 'UPPERCASE',
               "DROPDOWN('hole-mouthed jar', 'open-mouthed jar', 'collared jar')"),
              ('Temper', 'temper', 'TEXT',
               "DROPDOWN('T1', 'T2', 'T3','T4', 'T5', 'T6', 'T7')"),
@@ -93,6 +97,7 @@ object_types = {
              ('Rim Diameter', 'rim_diameter', 'FLOAT'),
              TREATMENT,
              ('Notes', 'notes', 'TEXT'),
+             ('Date recorded', 'date_recorded', 'DATE'),
          ],
          'layout_rows': [
              ['recorders'],
@@ -100,13 +105,13 @@ object_types = {
              ['context'],
              ['tnumber'],
              ['excavation_date'],
-             ['surface_treatment'],
-             ['temper'],
              ['typology_number'],
-             # ['munsell_color'],
-             ['collar_height'],
+             ['surface_treatment'],
              ['rim_diameter'],
+             ['collar_height'],
+             ['temper'],
              ['notes'],
+             # ['munsell_color'],
          ],
          'result_rows': [
              ['recorders'],
@@ -133,15 +138,24 @@ object_types = {
 
     'photographs':
         {'label': 'Photographs',
-         'filename_format': 'PHOTO_{site_name}_ID{record_id}',
+         'filename_format': 'PHOTO_{site_name}_{shot_type}ID{record_id}',
+         'fields_to_reset': [],
          'input_fields': [
              ('Photographer', 'photographer', 'TEXT', RECORDERS),
              SEASON, CONTEXT, EX_UNIT, AREA, LEVEL, EX_DATE,
-             ('Site Name', 'site_name', 'TEXT'),
+             ('Site Name', 'site_name', 'UPPERCASE'),
              ('Shot type', 'shot_type', 'TEXT'),
              ('Date recorded', 'date_recorded', 'TIMESTAMP'),
          ],
          'layout_rows': [
+             ['photographer'],
+             ['season'],
+             ['site_name'],
+             ['context'],
+             ['comments'],
+             ['date_recorded'],
+         ],
+         'result_rows': [
              ['photographer'],
              ['season', 'tnumber'],
              ['excavation_unit', 'area', 'level'],

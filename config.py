@@ -45,6 +45,7 @@ object_types = {
         {'label': 'Bags',
          'filename_format': 'BAG_{season}_Unit{excavation_unit}_T{tnumber}_Lot_{lot}_Area{area}_Level_{level}_ID{record_id}',
          'fields_to_reset': ['context', 'tnumber', 'excavation_date', 'notes'],
+         'copy_from': 'artifacts',
          'input_fields': [
              ('Recorders', 'recorders', 'TEXT', RECORDERS),
              ('T-Number', 'tnumber', 'TEXT'),
@@ -82,6 +83,7 @@ object_types = {
         {'label': 'Artifacts',
          'filename_format': 'ART_{season}_Unit{excavation_unit}_T{tnumber}_Lot_{lot}_Area{area}_Level_{level}_ID{record_id}',
          'fields_to_reset': ['temper', 'typology_number', 'collar_height', 'rim_diameter', 'surface_treatment', 'notes'],
+         'copy_from': 'bags',
          'input_fields': [
              ('Recorders', 'recorders', 'TEXT', RECORDERS),
              ('T-Number', 'tnumber', 'TEXT'),
@@ -98,7 +100,7 @@ object_types = {
              ('Date recorded', 'date_recorded', 'DATE'),
          ],
          'layout_rows': [
-             # ['recorders'],
+             ['recorders'],
              ['season'],
              ['context'],
              ['tnumber'],
@@ -146,6 +148,14 @@ object_types = {
              ('Date recorded', 'date_recorded', 'TIMESTAMP'),
          ],
          'layout_rows': [
+             ['photographer'],
+             ['season'],
+             ['site_name'],
+             ['context'],
+             ['comments'],
+             ['date_recorded'],
+         ],
+         'result_rows': [
              ['photographer'],
              ['season', 'tnumber'],
              ['excavation_unit', 'area', 'level'],

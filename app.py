@@ -196,6 +196,15 @@ for otype, cfg in OBJECT_TYPES.items():
     result_rows_effective = cleaned
 
     fields_to_reset = list(cfg.get('fields_to_reset') or [])
+    copy_from = (cfg.get('copy_from') or '').strip()
+    # Flattened unique list of layout field names (used by client-side helpers)
+    layout_fields = []
+    seen = set()
+    for _row in (layout_rows or []):
+        for _col in (_row or []):
+            if _col in field_meta and _col not in seen and _col not in SYSTEM_COLUMNS:
+                layout_fields.append(_col)
+                seen.add(_col)
     TYPE_META[otype] = {
         "label": label,
         "input_fields": input_fields,
@@ -203,11 +212,13 @@ for otype, cfg in OBJECT_TYPES.items():
         # system-managed columns. (TIMESTAMP fields are allowed.)
         "display_fields": [f for f in input_fields if (len(f) > 1 and f[1] not in SYSTEM_COLUMNS)],
         "layout_rows": layout_rows,
+        "layout_fields": layout_fields,
         "result_rows": result_rows_effective,
         "result_fields": [col for row in result_rows_effective for col in row],
         "required_fields": required_fields,
         "filename_format": filename_format,
         "fields_to_reset": fields_to_reset,
+        "copy_from": copy_from,
         "field_meta": field_meta,
     }
 
