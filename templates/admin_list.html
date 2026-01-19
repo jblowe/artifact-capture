@@ -92,7 +92,16 @@
               {% if images %}<div class="small">× {{ images|length }}</div>{% endif %}
             </td>
             {% for col in meta.result_fields %}
-              <td class="small">{{ r[col] if r[col] is not none else '' }}</td>
+              {% set fm = meta.field_meta.get(col, {}) %}
+              {% set v = r[col] if r[col] is not none else '' %}
+              <td class="small">
+                {% if fm.get('widget') == 'radio' and v %}
+                  {% set selected = (v|fromjson) %}
+                  {{ selected|join(', ') }}
+                {% else %}
+                  {{ v }}
+                {% endif %}
+              </td>
             {% endfor %}
             <td class="small">
               {% if images %}
@@ -169,7 +178,16 @@
               {% set label = f[0] %}
               {% set col = f[1] %}
               {% if col != 'date_updated' and r[col] %}
-                <strong>{{ label }}:</strong> {{ r[col] }}<br>
+                {% set fm = meta.field_meta.get(col, {}) %}
+                {% set v = r[col] %}
+                <strong>{{ label }}:</strong>
+                {% if fm.get('widget') == 'radio' and v %}
+                  {% set selected = (v|fromjson) %}
+                  {{ selected|join(', ') }}
+                {% else %}
+                  {{ v }}
+                {% endif %}
+                <br>
               {% endif %}
             {% endfor %}
             <span>{{ r['exif_datetime'] or '' }} {{ r['exif_make'] or '' }} {{ r['exif_model'] or '' }}</span>

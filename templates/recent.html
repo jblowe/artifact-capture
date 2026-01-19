@@ -41,7 +41,16 @@
               <tr>
                 <td class="mono"><strong>{{ r['id'] }}</strong></td>
                 {% for col in meta.result_fields %}
-                  <td>{{ r[col] }}</td>
+                  {% set fm = meta.field_meta.get(col, {}) %}
+                  {% set v = r[col] if r[col] is not none else '' %}
+                  <td>
+                    {% if fm.get('widget') == 'radio' and v %}
+                      {% set selected = (v|fromjson) %}
+                      {{ selected|join(', ') }}
+                    {% else %}
+                      {{ v }}
+                    {% endif %}
+                  </td>
                 {% endfor %}
                 <td class="mono">{{ r['date_updated'] or '' }}</td>
               </tr>
@@ -68,7 +77,14 @@
                     {% if val %}
                       <tr>
                         <td class="label" style="width:35%;">{{ fm.get('label') or col }}</td>
-                        <td>{{ val }}</td>
+                        <td>
+                          {% if fm.get('widget') == 'radio' and val %}
+                            {% set selected = (val|fromjson) %}
+                            {{ selected|join(', ') }}
+                          {% else %}
+                            {{ val }}
+                          {% endif %}
+                        </td>
                       </tr>
                     {% endif %}
                   {% endfor %}

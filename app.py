@@ -812,7 +812,8 @@ def exists():
     # Coerce values the same way as /submit does (but without requiring a photo).
     meta_values = {}
     ts = int(time.time())
-    ts_str = __import__("datetime").datetime.fromtimestamp(ts).strftime(TIMESTAMP_FORMAT)
+    now = __import__("datetime").datetime.fromtimestamp(ts)
+    ts_str = now.strftime(TIMESTAMP_FORMAT)
 
     for fdef in meta["input_fields"]:
         _label, col, coltype = fdef[0], fdef[1], (fdef[2] if len(fdef) > 2 else "TEXT")
@@ -896,7 +897,8 @@ def submit():
     submit_mode = (request.form.get("submit_mode") or "image").strip().lower()
     action = (request.form.get("action") or "").strip().lower()
     ts = int(time.time())
-    ts_str = __import__("datetime").datetime.fromtimestamp(ts).strftime(TIMESTAMP_FORMAT)
+    now = __import__("datetime").datetime.fromtimestamp(ts)
+    ts_str = now.strftime(TIMESTAMP_FORMAT)
 
     # Coerce metadata values from request.form according to config.
     meta_values = {}
@@ -1101,7 +1103,7 @@ def submit():
         if cur_id:
             try:
                 cand = conn.execute(f"SELECT * FROM {otype} WHERE id=?", (cur_id,)).fetchone()
-                if cand and cand.get('meta_signature') == meta_signature:
+                if cand and cand['meta_signature'] == meta_signature:
                     row = cand
             except Exception:
                 row = None
