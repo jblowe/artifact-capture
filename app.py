@@ -406,10 +406,23 @@ def requires_admin(f):
     def wrapper(*args, **kwargs):
         if check_auth(request.headers.get("Authorization")):
             return f(*args, **kwargs)
+        # Return a 401 with WWW-Authenticate so the browser re-prompts.
+        # Also disable caching to avoid a stale 401 being reused.
+        body = (
+            "<html><head><title>Authentication required</title></head>"
+            "<body style='font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;'>"
+            "<h3>Authentication required</h3>"
+            "<p>Please enter your admin username/password to continue.</p>"
+            "</body></html>"
+        )
         return Response(
-            "Authentication required",
+            body,
             401,
-            {"WWW-Authenticate": 'Basic realm="Artifact Admin"'}
+            {
+                "WWW-Authenticate": 'Basic realm="Artifact Admin", charset="UTF-8"',
+                "Cache-Control": "no-store",
+            },
+            mimetype="text/html",
         )
 
     return wrapper
@@ -799,8 +812,6 @@ def exists():
     # Coerce values the same way as /submit does (but without requiring a photo).
     meta_values = {}
     ts = int(time.time())
-    from datetime import datetime
-    now = datetime.now()
     ts_str = __import__("datetime").datetime.fromtimestamp(ts).strftime(TIMESTAMP_FORMAT)
 
     for fdef in meta["input_fields"]:
@@ -947,18 +958,9 @@ def submit():
         else:
             meta_values[col] = raw
 
-    # Allow optional post-processing of the collected form values.
-    meta_values = _apply_postprocess_values(otype, meta_values)
-
-    # Record matching signature: use non-timestamp values only.
-    signature_values = {}
-    for fdef in meta["input_fields"]:
-        col, coltype = fdef[1], (fdef[2] if len(fdef) > 2 else "TEXT")
-        t = (str(coltype or "TEXT")).upper().strip()
-        if t.startswith("TIMESTAMP"):
-            continue
-        signature_values[col] = meta_values.get(col)
     # Remember the user's most recent inputs per object type (for POST-to-POST continuity).
+    # Do this BEFORE post-processing so that even if post-processing fails we can
+    # return the form with the user's inputs intact.
     prefill_by_type = session.get('prefill_by_type', {})
     prefill = {}
     for fdef in meta['input_fields']:
@@ -973,6 +975,21 @@ def submit():
     prefill_by_type[otype] = prefill
     session['prefill_by_type'] = prefill_by_type
 
+    # Allow optional post-processing of the collected form values.
+    try:
+        meta_values = _apply_postprocess_values(otype, meta_values)
+    except Exception:
+        flash('post processing failed, please correct.')
+        return redirect(url_for('form', type=otype))
+
+    # Record matching signature: use non-timestamp values only.
+    signature_values = {}
+    for fdef in meta["input_fields"]:
+        col, coltype = fdef[1], (fdef[2] if len(fdef) > 2 else "TEXT")
+        t = (str(coltype or "TEXT")).upper().strip()
+        if t.startswith("TIMESTAMP"):
+            continue
+        signature_values[col] = meta_values.get(col)
     for col in meta["required_fields"]:
         if not meta_values.get(col):
             label = meta["field_meta"].get(col, {}).get("label", col.replace("_", " ").title())
@@ -1498,6 +1515,41 @@ def admin_add_image(otype, aid):
         flash('Please take or choose a photo.')
         return redirect(url_for('admin_edit', otype=otype, aid=aid))
 
+
+        # Remove corresponding files if present
+        if img_idx < len(images):
+            _safe_delete_upload(images[img_idx])
+            images.pop(img_idx)
+        if img_idx < len(thumbs):
+            _safe_delete_upload(thumbs[img_idx])
+            thumbs.pop(img_idx)
+        if img_idx < len(webps):
+            _safe_delete_upload(webps[img_idx])
+            webps.pop(img_idx)
+        if img_idx < len(jfiles):
+            _safe_delete_upload(jfiles[img_idx])
+            jfiles.pop(img_idx)
+
+        du_sql = ''
+        du_params = []
+        if meta.get('field_meta', {}).get('date_updated', {}).get('server_now'):
+            du_sql = 'date_updated=?, '
+            du_params.append(now.strftime(TIMESTAMP_FORMAT))
+
+        sql = (
+            f"UPDATE {otype} SET {du_sql}date_last_saved=?, images_json=?, thumbs_json=?, webps_json=?, json_files_json=? "
+            "WHERE id=?"
+        )
+        params = du_params + [
+            now.strftime(TIMESTAMP_FORMAT),
+            json.dumps(images), json.dumps(thumbs), json.dumps(webps), json.dumps(jfiles),
+            int(aid),
+        ]
+        conn.execute(sql, params)
+
+    flash('Deleted image.')
+    return redirect(url_for('admin_edit', otype=otype, aid=aid))
+
     ts = int(time.time())
     from datetime import datetime
     now = datetime.now()
@@ -1624,6 +1676,90 @@ def admin_add_image(otype, aid):
 
     flash(f"Added image to record {aid}.")
     return redirect(url_for('admin_edit', otype=otype, aid=aid))
+
+
+@app.post('/admin/<otype>/<int:aid>/delete_image/<int:img_idx>')
+@requires_admin
+def admin_delete_image(otype, aid, img_idx):
+    otype = (otype or '').strip().lower()
+    if otype not in TYPE_META:
+        flash('Unknown object type.')
+        return redirect(url_for('admin_list', type=otype))
+    meta = TYPE_META[otype]
+
+    from datetime import datetime
+    now = datetime.now()
+
+    def _load_list(val):
+        if not val:
+            return []
+        try:
+            x = json.loads(val)
+            return x if isinstance(x, list) else []
+        except Exception:
+            return []
+
+    def _safe_delete_upload(fname: str):
+        if not fname:
+            return
+        try:
+            p = (UPLOAD_DIR / fname).resolve()
+            root = UPLOAD_DIR.resolve()
+            if str(p).startswith(str(root)) and p.exists():
+                p.unlink()
+        except Exception:
+            pass
+
+    with get_db() as conn:
+        row = conn.execute(f"SELECT * FROM {otype} WHERE id=?", (aid,)).fetchone()
+        if not row:
+            flash('Record not found.')
+            return redirect(url_for('admin_list', type=otype))
+        row = dict(row)
+
+        images = _load_list(row.get('images_json'))
+        thumbs = _load_list(row.get('thumbs_json'))
+        webps  = _load_list(row.get('webps_json'))
+        jfiles = _load_list(row.get('json_files_json'))
+
+        # img_idx is 0-based index from the template
+        max_len = max(len(images), len(thumbs), len(webps), len(jfiles), 0)
+        if img_idx < 0 or img_idx >= max_len:
+            flash('Image index out of range.')
+            return redirect(url_for('admin_edit', otype=otype, aid=aid))
+
+        if img_idx < len(images):
+            _safe_delete_upload(images[img_idx])
+            images.pop(img_idx)
+        if img_idx < len(thumbs):
+            _safe_delete_upload(thumbs[img_idx])
+            thumbs.pop(img_idx)
+        if img_idx < len(webps):
+            _safe_delete_upload(webps[img_idx])
+            webps.pop(img_idx)
+        if img_idx < len(jfiles):
+            _safe_delete_upload(jfiles[img_idx])
+            jfiles.pop(img_idx)
+
+        du_sql = ''
+        du_params = []
+        if meta.get('field_meta', {}).get('date_updated', {}).get('server_now'):
+            du_sql = 'date_updated=?, '
+            du_params.append(now.strftime(TIMESTAMP_FORMAT))
+
+        sql = (
+            f"UPDATE {otype} SET {du_sql}date_last_saved=?, images_json=?, thumbs_json=?, webps_json=?, json_files_json=? "
+            "WHERE id=?"
+        )
+        params = du_params + [
+            now.strftime(TIMESTAMP_FORMAT),
+            json.dumps(images), json.dumps(thumbs), json.dumps(webps), json.dumps(jfiles),
+            int(aid),
+        ]
+        conn.execute(sql, params)
+
+    flash('Deleted image.')
+    return redirect(url_for('admin_edit', otype=otype, aid=aid))
 @app.route("/admin/edit/<otype>/<int:aid>", methods=["GET", "POST"])
 @requires_admin
 def admin_edit(otype, aid):
@@ -1636,6 +1772,8 @@ def admin_edit(otype, aid):
     with get_db() as conn:
         if request.method == "POST":
             updates = {}
+            from datetime import datetime
+            now = datetime.now()
             # App-internal save timestamp
             updates['date_last_saved'] = now.strftime(TIMESTAMP_FORMAT)
             if meta.get('field_meta', {}).get('date_updated', {}).get('server_now'):
@@ -1647,8 +1785,6 @@ def admin_edit(otype, aid):
 
                 if fm.get('server_now'):
                     # Server-managed timestamp/date (e.g., date_last_saved)
-                    from datetime import datetime
-                    now = datetime.now()
                     updates[col] = now.strftime(DATE_FORMAT) if t == 'DATE' else now.strftime(TIMESTAMP_FORMAT)
                     continue
                 t = (str(coltype or "TEXT")).upper().strip()

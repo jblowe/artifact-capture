@@ -33,19 +33,16 @@
                 {% set fm = meta.field_meta.get(col, {}) %}
                 <th>{{ fm.get('label') or col }}</th>
               {% endfor %}
-              <th>Images</th>
               <th>Updated</th>
             </tr>
           </thead>
           <tbody>
             {% for r in rows %}
-              {% set images = (r['images_json']|fromjson) %}
               <tr>
-                <td class="mono">{{ r['id'] }}</td>
+                <td class="mono"><strong>{{ r['id'] }}</strong></td>
                 {% for col in meta.result_fields %}
                   <td>{{ r[col] }}</td>
                 {% endfor %}
-                <td class="mono">{{ (images|length) if images else 0 }}</td>
                 <td class="mono">{{ r['date_updated'] or '' }}</td>
               </tr>
             {% endfor %}
@@ -58,10 +55,32 @@
         {% set images = (r['images_json']|fromjson) %}
         {% set thumbs = (r['thumbs_json']|fromjson) %}
         <div class="card" style="margin-top:12px;">
-          <div class="row" style="align-items:flex-start; gap:14px;">
-            <div style="min-width:120px;">
+          <div style="font-weight:800; margin-bottom:8px;"><strong>{{ r['id'] }}</strong></div>
+          <div style="display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap;">
+
+            <!-- Left: metadata -->
+            <div style="flex:1 1 360px; min-width:280px;">
+              <table class="result-table compact-table" style="width:100%;">
+                {% for row in meta.result_rows %}
+                  {% for col in row %}
+                    {% set fm = meta.field_meta.get(col, {}) %}
+                    {% set val = r[col] if r[col] is not none else '' %}
+                    {% if val %}
+                      <tr>
+                        <td class="label" style="width:35%;">{{ fm.get('label') or col }}</td>
+                        <td>{{ val }}</td>
+                      </tr>
+                    {% endif %}
+                  {% endfor %}
+                {% endfor %}
+              </table>
+              {% if r['date_updated'] %}<div class="meta" style="margin-top:6px;">Updated: {{ r['date_updated'] }}</div>{% endif %}
+            </div>
+
+            <!-- Right: images -->
+            <div style="flex:0 0 320px; min-width:240px;">
               {% if thumbs %}
-                <div style="display:flex;flex-wrap:wrap;gap:6px;">
+                <div style="display:flex; flex-wrap:wrap; gap:6px; justify-content:flex-start;">
                   {% for t in thumbs %}
                     {% set i = loop.index0 %}
                     {% set href = (images[i] if images and (images|length > i) else t) %}
@@ -70,25 +89,17 @@
                     </a>
                   {% endfor %}
                 </div>
-              {% endif %}
-              <div class="small">ID: <span class="mono">{{ r['id'] }}</span></div>
-              {% if images %}<div class="small">Images: {{ images|length }}</div>{% endif %}
-            </div>
-
-            <div class="small" style="flex:1;">
-              {% for row in meta.result_rows %}
-                <div>
-                  {% for col in row %}
-                    {% set fm = meta.field_meta.get(col, {}) %}
-                    {% if r[col] %}
-                      <strong>{{ fm.get('label') or col }}:</strong> {{ r[col] }}
-                      {% if not loop.last %} · {% endif %}
-                    {% endif %}
+              {% elif images %}
+                <div style="display:flex; flex-wrap:wrap; gap:6px;">
+                  {% for img in images %}
+                    <a href="{{ url_for('serve_upload', fname=img) }}" target="_blank" title="{{ img }}">
+                      <img class="thumb" src="{{ url_for('serve_upload', fname=img) }}" alt="image">
+                    </a>
                   {% endfor %}
                 </div>
-              {% endfor %}
-              {% if r['date_updated'] %}<div class="meta">Updated: {{ r['date_updated'] }}</div>{% endif %}
+              {% endif %}
             </div>
+
           </div>
         </div>
       {% endfor %}

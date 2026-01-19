@@ -55,23 +55,52 @@
                     </div>
                   {% endif %}
 
-                  <table class="result-table" style="margin-top:10px;">
+                  <table class="result-table compact-table" style="margin-top:10px;">
+	                    {% set max_fields = (meta.result_rows | map('length') | max) %}
                     {% for row in meta.result_rows %}
-                      <tr>
-                        {% for col in row %}
-                          {% set fm = meta.field_meta.get(col, {}) %}
-                          {% set vv = r[col] if r[col] is not none else '' %}
-                          <td class="label">{{ fm.get('label') or col }}</td>
-                          <td>
-                            {% if fm.get('widget') == 'radio' and vv %}
-                              {% set selected = (vv|fromjson) %}
-                              {{ selected|join(', ') }}
-                            {% else %}
-                              {{ vv }}
+                      {% set ns = namespace(nonempty=[]) %}
+                      {% for col in row %}
+                        {% set vv = r[col] if r[col] is not none else '' %}
+                        {% if vv %}
+                          {% set ns.nonempty = ns.nonempty + [col] %}
+                        {% endif %}
+                      {% endfor %}
+                      {% if ns.nonempty|length == 0 %}
+                        {# skip rows with no data #}
+	                      {% elif row|length == 1 and ns.nonempty|length == 1 %}
+                        {% set col = ns.nonempty[0] %}
+                        {% set fm = meta.field_meta.get(col, {}) %}
+                        {% set vv = r[col] if r[col] is not none else '' %}
+                        <tr>
+	                          <td class="label">{{ fm.get('label') or col }}</td>
+	                          <td colspan="{{ (max_fields * 2) - 1 }}">
+	                            {% if fm.get('widget') == 'radio' and vv %}
+	                              {% set selected = (vv|fromjson) %}
+	                              {{ selected|join(', ') }}
+	                            {% else %}
+	                              {{ vv }}
+	                            {% endif %}
+	                          </td>
+                        </tr>
+                      {% else %}
+                        <tr>
+                          {% for col in row %}
+                            {% set fm = meta.field_meta.get(col, {}) %}
+                            {% set vv = r[col] if r[col] is not none else '' %}
+                            {% if vv %}
+                              <td class="label">{{ fm.get('label') or col }}</td>
+                              <td>
+                                {% if fm.get('widget') == 'radio' and vv %}
+                                  {% set selected = (vv|fromjson) %}
+                                  {{ selected|join(', ') }}
+                                {% else %}
+                                  {{ vv }}
+                                {% endif %}
+                              </td>
                             {% endif %}
-                          </td>
-                        {% endfor %}
-                      </tr>
+                          {% endfor %}
+                        </tr>
+                      {% endif %}
                     {% endfor %}
                   </table>
                 </div>
