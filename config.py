@@ -84,7 +84,7 @@ object_types = {
         {'label': 'Artifacts',
          'filename_format': 'ART_{season}_Unit{excavation_unit}_T{tnumber}_Lot_{lot}_Area{area}_Level_{level}_ID{record_id}',
          'fields_to_reset': ['temper', 'typology_number', 'collar_height', 'rim_diameter', 'surface_treatment', 'notes'],
-         'index': ['temper','surface_treatment', 'typology_number', 'context', 'vessel_type'],
+         'index': ['surface_treatment', 'typology_number', 'temper', 'context', 'vessel_type'],
          'copy_from': 'bags',
          'input_fields': [
              ('Recorders', 'recorders', 'TEXT', RECORDERS),
