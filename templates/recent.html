@@ -60,10 +60,16 @@
         <div class="card" style="margin-top:12px;">
           <div class="row" style="align-items:flex-start; gap:14px;">
             <div style="min-width:120px;">
-              {% if thumbs and thumbs[-1] %}
-                <a href="{{ url_for('serve_upload', fname=images[-1] if images else thumbs[-1]) }}" target="_blank">
-                  <img class="thumb" src="{{ url_for('serve_upload', fname=thumbs[-1]) }}" alt="thumb">
-                </a>
+              {% if thumbs %}
+                <div style="display:flex;flex-wrap:wrap;gap:6px;">
+                  {% for t in thumbs %}
+                    {% set i = loop.index0 %}
+                    {% set href = (images[i] if images and (images|length > i) else t) %}
+                    <a href="{{ url_for('serve_upload', fname=href) }}" target="_blank" title="{{ href }}">
+                      <img class="thumb" src="{{ url_for('serve_upload', fname=t) }}" alt="thumb">
+                    </a>
+                  {% endfor %}
+                </div>
               {% endif %}
               <div class="small">ID: <span class="mono">{{ r['id'] }}</span></div>
               {% if images %}<div class="small">Images: {{ images|length }}</div>{% endif %}

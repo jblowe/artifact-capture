@@ -1,13 +1,26 @@
-{% if images and images|length %}
-<div class="admin-images mt-2">
-  {% for img in images %}
-    <a href="{{ img.full_url }}" target="_blank">
-      <img src="{{ img.thumb_url }}"
-           class="img-thumbnail me-1 mb-1"
-           style="max-height:120px;">
-    </a>
-  {% endfor %}
-</div>
+{% set images = (r['images_json']|fromjson) if r['images_json'] else [] %}
+{% set thumbs = (r['thumbs_json']|fromjson) if r['thumbs_json'] else [] %}
+
+{% if thumbs %}
+  <div style="display:flex; flex-wrap:wrap; gap:8px;">
+    {% for t in thumbs %}
+      {% set i = loop.index0 %}
+      {% set href = (images[i] if images and (images|length > i) else t) %}
+      <a href="{{ url_for('serve_upload', fname=href) }}" target="_blank" title="{{ href }}">
+        <img class="thumb" src="{{ url_for('serve_upload', fname=t) }}" alt="thumb">
+      </a>
+    {% endfor %}
+  </div>
+  <div class="small" style="margin-top:8px;"><strong>Total images:</strong> {{ thumbs|length }}</div>
+{% elif images %}
+  <div style="display:flex; flex-wrap:wrap; gap:8px;">
+    {% for img in images %}
+      <a href="{{ url_for('serve_upload', fname=img) }}" target="_blank" title="{{ img }}">
+        <img class="thumb" src="{{ url_for('serve_upload', fname=img) }}" alt="image">
+      </a>
+    {% endfor %}
+  </div>
+  <div class="small" style="margin-top:8px;"><strong>Total images:</strong> {{ images|length }}</div>
 {% else %}
-<div class="text-muted small">No images attached.</div>
+  <div class="text-muted small">No images attached.</div>
 {% endif %}

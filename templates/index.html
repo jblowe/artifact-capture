@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles/app.css') }}">
+  <script defer src="{{ url_for('static', filename='js/app.js') }}"></script>
+  <title>Index</title>
+</head>
+<body>
+{% include "_banner.html" %}
+
+<div class="page">
+
+  <div class="card">
+    <div class="tabs">
+      {% for key, m in OBJECT_TYPES.items() %}
+        <a class="tab {% if key == otype %}active{% endif %}" href="{{ url_for('index', type=key) }}">{{ m.label }}</a>
+      {% endfor %}
+    </div>
+
+    {% if not index_fields %}
+      <div style="margin-top:12px;" class="meta">No index fields are configured for this object type. Add an <code>index</code> list in <code>config.py</code> (e.g. <code>'index': ['temper','typology']</code>).</div>
+    {% else %}
+      <div class="actions" style="margin-top:10px; flex-wrap:wrap;">
+        {% for f in index_fields %}
+          {% set lbl = meta.field_meta.get(f, {}).get('label') or f %}
+          <a class="btn {% if f == field %}primary{% endif %}" href="{{ url_for('index', type=otype, field=f) }}">{{ lbl }}</a>
+        {% endfor %}
+      </div>
+
+      <div style="margin-top:14px;">
+        {% for val, recs in groups %}
+          <div class="card" style="margin-bottom:12px;">
+            <div style="display:flex; justify-content:space-between; gap:10px; align-items:baseline; flex-wrap:wrap;">
+              <div style="font-weight:800;">{{ val }}</div>
+              <div class="meta">{{ recs|length }} record(s)</div>
+            </div>
+
+            <div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:10px;">
+              {% for r in recs %}
+                <div class="card" style="min-width:260px; flex:1 1 320px;">
+                  <div style="display:flex; justify-content:space-between; gap:10px; align-items:center; flex-wrap:wrap;">
+                    <div style="font-weight:800;">#{{ r['id'] }}</div>
+                    <a class="btn" href="{{ url_for('admin_edit', otype=otype, aid=r['id']) }}">Open</a>
+                  </div>
+
+                  {% if r['_img_pairs'] and r['_img_pairs']|length %}
+                    <div class="thumb-strip" style="margin-top:10px;">
+                      {% for p in r['_img_pairs'] %}
+                        <a href="{{ url_for('serve_upload', fname=p.full) }}" target="_blank">
+                          <img class="thumb" src="{{ url_for('serve_upload', fname=p.thumb) }}" alt="thumb">
+                        </a>
+                      {% endfor %}
+                    </div>
+                  {% endif %}
+
+                  <table class="result-table" style="margin-top:10px;">
+                    {% for row in meta.result_rows %}
+                      <tr>
+                        {% for col in row %}
+                          {% set fm = meta.field_meta.get(col, {}) %}
+                          {% set vv = r[col] if r[col] is not none else '' %}
+                          <td class="label">{{ fm.get('label') or col }}</td>
+                          <td>
+                            {% if fm.get('widget') == 'radio' and vv %}
+                              {% set selected = (vv|fromjson) %}
+                              {{ selected|join(', ') }}
+                            {% else %}
+                              {{ vv }}
+                            {% endif %}
+                          </td>
+                        {% endfor %}
+                      </tr>
+                    {% endfor %}
+                  </table>
+                </div>
+              {% endfor %}
+            </div>
+
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+  </div>
+
+</div>
+
+</body>
+</html>

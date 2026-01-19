@@ -124,7 +124,7 @@ TYPE_META = {}
 
 # Columns that are managed by the server and should not be treated like
 # user-configured input fields (e.g., to avoid duplicate display).
-SYSTEM_COLUMNS = {"id", "gps_lat", "gps_lon", "gps_acc", "thumbs_json", "images_json", "json_files_json", "date_recorded"}
+SYSTEM_COLUMNS = {"id", "gps_lat", "gps_lon", "gps_acc", "thumbs_json", "images_json", "json_files_json", "date_last_saved"}
 
 for otype, cfg in OBJECT_TYPES.items():
     if not isinstance(cfg, dict):
@@ -164,9 +164,8 @@ for otype, cfg in OBJECT_TYPES.items():
             widget_raw = f[3] if len(f) > 3 else ""
             widget, options = _parse_widget(widget_raw)
             sqlite_type = sql_type_str
-
-        if str(col).lower() == "date_recorded":
-            # Server-managed timestamp/date set on insert/update.
+        # Special: if user defines date_updated as TIMESTAMP, manage it as NOW() on save.
+        if str(col).lower() == "date_updated" and st_up.startswith("TIMESTAMP"):
             server_now = True
 
         field_meta[col] = {
@@ -197,6 +196,7 @@ for otype, cfg in OBJECT_TYPES.items():
 
     fields_to_reset = list(cfg.get('fields_to_reset') or [])
     copy_from = (cfg.get('copy_from') or '').strip()
+    index_fields = list(cfg.get('index') or [])
     # Flattened unique list of layout field names (used by client-side helpers)
     layout_fields = []
     seen = set()
@@ -219,6 +219,7 @@ for otype, cfg in OBJECT_TYPES.items():
         "filename_format": filename_format,
         "fields_to_reset": fields_to_reset,
         "copy_from": copy_from,
+        "index_fields": index_fields,
         "field_meta": field_meta,
     }
 
@@ -275,6 +276,7 @@ def inject_globals():
         'upload': endpoint in ('form',),
         'recent': endpoint in ('recent',),
         'edit': endpoint.startswith('admin_'),
+        'index': endpoint in ('index',),
         'info': endpoint in ('info',),
         'user': endpoint in ('user',),
     }
@@ -283,6 +285,7 @@ def inject_globals():
         {'key': 'upload', 'label': 'Upload', 'url': url_for('form', type=ct), 'active': active['upload']},
         {'key': 'recent', 'label': 'Recent', 'url': url_for('recent', type=ct), 'active': active['recent']},
         {'key': 'edit', 'label': 'Edit', 'url': url_for('admin_list', type=ct), 'active': active['edit']},
+        {'key': 'index', 'label': 'Index', 'url': url_for('index', type=ct), 'active': active['index']},
         {'key': 'info', 'label': 'Info', 'url': url_for('info'), 'active': active['info']},
         {'key': 'user', 'label': 'Account', 'url': url_for('user'), 'active': active['user']},
     ]
@@ -325,6 +328,7 @@ def init_db():
         ("webps_json", "TEXT"),
         ("json_files_json", "TEXT"),
         ("meta_signature", "TEXT"),
+        ("date_last_saved", "TEXT"),
         ("width", "INTEGER"),
         ("height", "INTEGER"),
         ("timestamp", "INTEGER"),
@@ -795,16 +799,14 @@ def exists():
     # Coerce values the same way as /submit does (but without requiring a photo).
     meta_values = {}
     ts = int(time.time())
+    from datetime import datetime
+    now = datetime.now()
     ts_str = __import__("datetime").datetime.fromtimestamp(ts).strftime(TIMESTAMP_FORMAT)
 
     for fdef in meta["input_fields"]:
         _label, col, coltype = fdef[0], fdef[1], (fdef[2] if len(fdef) > 2 else "TEXT")
         t = (str(coltype or "TEXT")).upper().strip()
         fm = meta["field_meta"].get(col, {})
-
-        if t.startswith("TIMESTAMP"):
-            meta_values[col] = ts_str
-            continue
 
         if t == "CONSTANT" or fm.get("widget") == "constant":
             meta_values[col] = str(fm.get("constant_value") or "")
@@ -815,7 +817,7 @@ def exists():
             meta_values[col] = json.dumps(selected, ensure_ascii=False, separators=(",", ":")) if selected else None
             continue
 
-        # Server-managed timestamp/date (e.g., date_recorded)
+        # Server-managed timestamp/date (e.g., date_last_saved)
 
         if fm.get('server_now'):
 
@@ -855,7 +857,7 @@ def exists():
     for fdef in meta["input_fields"]:
         col, coltype = fdef[1], (fdef[2] if len(fdef) > 2 else "TEXT")
         t = (str(coltype or "TEXT")).upper().strip()
-        if t.startswith("TIMESTAMP") or str(col).lower() == "date_recorded":
+        if t.startswith("TIMESTAMP"):
             continue
         signature_values[col] = meta_values.get(col)
 
@@ -893,10 +895,6 @@ def submit():
         t = (str(coltype or "TEXT")).upper().strip()
         fm = meta["field_meta"].get(col, {})
 
-        if t.startswith("TIMESTAMP"):
-            meta_values[col] = ts_str
-            continue
-
         # CONSTANT fields are server-controlled (clients may submit, but we overwrite).
         if t == "CONSTANT" or fm.get("widget") == "constant":
             meta_values[col] = str(fm.get("constant_value") or "")
@@ -911,7 +909,7 @@ def submit():
                 meta_values[col] = None
             continue
 
-        # Server-managed timestamp/date (e.g., date_recorded)
+        # Server-managed timestamp/date (e.g., date_last_saved)
 
         if fm.get('server_now'):
 
@@ -957,7 +955,7 @@ def submit():
     for fdef in meta["input_fields"]:
         col, coltype = fdef[1], (fdef[2] if len(fdef) > 2 else "TEXT")
         t = (str(coltype or "TEXT")).upper().strip()
-        if t.startswith("TIMESTAMP") or str(col).lower() == "date_recorded":
+        if t.startswith("TIMESTAMP"):
             continue
         signature_values[col] = meta_values.get(col)
     # Remember the user's most recent inputs per object type (for POST-to-POST continuity).
@@ -999,19 +997,20 @@ def submit():
                     flash('No current record to update. Click New Record first.')
                     return redirect(url_for('form', type=otype))
 
-                sets = ",".join([f"{c}=?" for c in meta_cols] + ["meta_signature=?", "timestamp=?"])
-                vals = [meta_values.get(c) for c in meta_cols] + [meta_signature, ts]
+                sets = ",".join([f"{c}=?" for c in meta_cols] + ["meta_signature=?", "timestamp=?", "date_last_saved=?"] + (["date_updated=?"] if meta.get('field_meta', {}).get('date_updated', {}).get('server_now') else []))
+                vals = [meta_values.get(c) for c in meta_cols] + [meta_signature, ts, now.strftime(TIMESTAMP_FORMAT)] + ([now.strftime(TIMESTAMP_FORMAT)] if meta.get('field_meta', {}).get('date_updated', {}).get('server_now') else [])
                 conn.execute(f"UPDATE {otype} SET {sets} WHERE id=?", vals + [rid])
                 flash(f"Record {rid} updated.")
                 return redirect(url_for('form', type=otype, last_id=rid, last_type=otype))
 
             # Default (and 'new_record'): always insert a fresh row
-            db_cols = meta_cols + ["meta_signature", "images_json", "thumbs_json", "webps_json", "json_files_json", "timestamp"]
+            db_cols = meta_cols + ["meta_signature", "images_json", "thumbs_json", "webps_json", "json_files_json", "timestamp", "date_last_saved"] + (["date_updated"] if meta.get('field_meta', {}).get('date_updated', {}).get('server_now') else [])
             vals = [meta_values.get(c) for c in meta_cols] + [
                 meta_signature,
                 json.dumps([]), json.dumps([]), json.dumps([]), json.dumps([]),
                 ts,
-            ]
+                now.strftime(TIMESTAMP_FORMAT),
+            ] + ([now.strftime(TIMESTAMP_FORMAT)] if meta.get('field_meta', {}).get('date_updated', {}).get('server_now') else [])
             placeholders = ",".join(["?"] * len(db_cols))
             cur = conn.execute(f"INSERT INTO {otype} ({','.join(db_cols)}) VALUES ({placeholders})", vals)
             rid = int(cur.lastrowid)
@@ -1236,27 +1235,29 @@ def submit():
             json.dumps(record_payload, indent=2),
             encoding="utf-8",
         )
-
         # Update record with new image lists and latest capture context.
-        # Also bump date_recorded if configured (server-managed).
-        dr_sql = ''
-        dr_val = None
-        if meta.get('field_meta', {}).get('date_recorded', {}).get('server_now'):
-            from datetime import datetime
-            now = datetime.now()
-            dr_type = (meta.get('field_meta', {}).get('date_recorded', {}).get('sql_type') or 'TEXT').upper().strip()
-            dr_val = now.strftime(DATE_FORMAT) if dr_type == 'DATE' else now.strftime(TIMESTAMP_FORMAT)
-            dr_sql = 'date_recorded=?, '
+        # Always bump date_last_saved; bump date_updated if configured (TIMESTAMP + field name date_updated).
+        from datetime import datetime
+        now2 = datetime.now()
+        dls = now2.strftime(TIMESTAMP_FORMAT)
+        du_sql = ''
+        du_val = None
+        if meta.get('field_meta', {}).get('date_updated', {}).get('server_now'):
+            du_sql = 'date_updated=?, '
+            du_val = now2.strftime(TIMESTAMP_FORMAT)
 
         sql = (
-            f"UPDATE {otype} SET {dr_sql}images_json=?, thumbs_json=?, webps_json=?, json_files_json=?, "
+            f"UPDATE {otype} SET {du_sql}date_last_saved=?, images_json=?, thumbs_json=?, webps_json=?, json_files_json=?, "
             "width=?, height=?, timestamp=?, ip=?, user_agent=?, exif_datetime=?, exif_make=?, exif_model=?, exif_orientation=?, gps_lat=?, gps_lon=?, gps_alt=? "
             "WHERE id=?"
         )
         params = []
-        if dr_sql:
-            params.append(dr_val)
-        params += [
+        if du_sql:
+            params.append(du_val)
+        params.append(dls)
+        if du_sql:
+            params.append(du_val)
+        params += [dls_val, 
             json.dumps(images), json.dumps(thumbs), json.dumps(webps), json.dumps(jfiles),
             width, height, ts, ip, ua,
             exif_datetime, exif_make, exif_model, exif_orientation,
@@ -1291,6 +1292,105 @@ def recent():
         meta=TYPE_META[otype],
         view=view,
         banner_title=make_banner_title("Recent", TYPE_META[otype]["label"]),
+    )
+
+
+def _index_groups_for_field(otype: str, field: str):
+    """Return grouped records for Index view.
+
+    For normal TEXT fields, groups by exact value.
+    For RADIO fields (stored as JSON list), groups by each selected value.
+    """
+    meta = TYPE_META[otype]
+    fm = meta.get('field_meta', {}).get(field, {})
+    widget = (fm.get('widget') or '').lower()
+    is_radio = widget == 'radio'
+
+    # Pull only needed columns.
+    cols = set(['id', 'thumbs_json', 'images_json', field])
+    # Add any fields used in result_rows so we can show tidy metadata.
+    for c in meta.get('result_fields', []):
+        cols.add(c)
+    cols = [c for c in cols if c]
+    col_sql = ", ".join([f'"{c}"' for c in cols])
+
+    with get_db() as conn:
+        rows = conn.execute(
+            f"SELECT {col_sql} FROM {otype} ORDER BY id DESC"
+        ).fetchall()
+
+    groups = {}  # value -> list[dict]
+
+    def _add_to_group(val, rdict):
+        key = (val or '').strip()
+        if not key:
+            key = '(blank)'
+        groups.setdefault(key, []).append(rdict)
+
+    for r in rows:
+        r = dict(r)
+        thumbs = json.loads(r.get('thumbs_json') or '[]')
+        images = json.loads(r.get('images_json') or '[]')
+        pairs = []
+        # Prefer thumbs, but still link to matching full images by index.
+        for i, t in enumerate(thumbs):
+            full = images[i] if i < len(images) else t
+            pairs.append({'thumb': t, 'full': full})
+        # If no thumbs, fall back to full images.
+        if not pairs and images:
+            for img in images:
+                pairs.append({'thumb': img, 'full': img})
+        r['_img_pairs'] = pairs
+
+        raw = r.get(field)
+        if is_radio:
+            try:
+                vals = json.loads(raw) if raw else []
+                if not isinstance(vals, list):
+                    vals = [str(vals)]
+            except Exception:
+                vals = [str(raw)] if raw else []
+            if not vals:
+                _add_to_group('', r)
+            else:
+                for v in vals:
+                    _add_to_group(str(v), r)
+        else:
+            _add_to_group(str(raw) if raw is not None else '', r)
+
+    # Sort keys alphabetically, but keep (blank) last.
+    keys = sorted([k for k in groups.keys() if k != '(blank)'], key=lambda s: s.casefold())
+    if '(blank)' in groups:
+        keys.append('(blank)')
+
+    return [(k, groups[k]) for k in keys]
+
+
+@app.route("/index")
+def index():
+    otype = (request.args.get("type") or "").strip().lower()
+    if otype not in TYPE_META:
+        otype = next(iter(TYPE_META.keys()))
+    g.current_type = otype
+
+    meta = TYPE_META[otype]
+    index_fields = [f for f in (meta.get('index_fields') or []) if f in meta.get('field_meta', {})]
+    field = (request.args.get('field') or (index_fields[0] if index_fields else '')).strip()
+    if field not in index_fields and index_fields:
+        field = index_fields[0]
+
+    groups = []
+    if field:
+        groups = _index_groups_for_field(otype, field)
+
+    return render_template(
+        "index.html",
+        otype=otype,
+        meta=meta,
+        index_fields=index_fields,
+        field=field,
+        groups=groups,
+        banner_title=make_banner_title("Index", meta["label"]),
     )
 
 
@@ -1384,6 +1484,146 @@ def admin_list():
 
 
 
+@app.post("/admin/<otype>/<int:aid>/add_image")
+@requires_admin
+def admin_add_image(otype, aid):
+    otype = (otype or '').strip().lower()
+    if otype not in TYPE_META:
+        flash('Unknown object type.')
+        return redirect(url_for('admin_list', type=otype))
+    meta = TYPE_META[otype]
+
+    f = request.files.get('photo')
+    if not f or f.filename == '':
+        flash('Please take or choose a photo.')
+        return redirect(url_for('admin_edit', otype=otype, aid=aid))
+
+    ts = int(time.time())
+    from datetime import datetime
+    now = datetime.now()
+    ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    ua = request.headers.get('User-Agent', '')
+
+    with get_db() as conn:
+        row = conn.execute(f"SELECT * FROM {otype} WHERE id=?", (aid,)).fetchone()
+        if not row:
+            flash('Record not found.')
+            return redirect(url_for('admin_list', type=otype))
+
+        # sqlite3.Row does not support .get(); convert to dict for convenience
+        row = dict(row)
+
+        def _load_list(val):
+            if not val:
+                return []
+            try:
+                x = json.loads(val)
+                return x if isinstance(x, list) else []
+            except Exception:
+                return []
+
+        images = _load_list(row.get('images_json'))
+        thumbs = _load_list(row.get('thumbs_json'))
+        webps  = _load_list(row.get('webps_json'))
+        jfiles = _load_list(row.get('json_files_json'))
+
+        # Use existing record metadata values for filename formatting.
+        meta_values = {}
+        for fdef in meta['input_fields']:
+            col = fdef[1]
+            fm = meta['field_meta'].get(col, {})
+            if fm.get('widget') == 'constant':
+                meta_values[col] = str(fm.get('constant_value') or '')
+            else:
+                meta_values[col] = row.get(col)
+
+        # Read & process image
+        data = f.read()
+        img, exif_raw, exif_small, gps_lat, gps_lon, gps_alt = extract_exif_and_autorotate(data)
+        img, width, height = resize_if_needed(img)
+        thumb = make_thumbnail(img)
+
+        exif_datetime = exif_small.get('exif_datetime')
+        exif_make = exif_small.get('exif_make')
+        exif_model = exif_small.get('exif_model')
+        exif_orientation = exif_small.get('exif_orientation')
+
+        def _make_base(record_id: int) -> str:
+            fmt = (meta.get('filename_format') or '').strip()
+            out = _safe_format_filename(fmt, meta_values, record_id)
+            if out:
+                return out
+            return slug(f"{otype.upper()}_ID{record_id}")
+
+        img_idx = len(images) + 1
+        base = _make_base(int(aid)) + f"_IMG{img_idx}"
+        jpg_name = f"{base}.jpg"
+        thumb_name = f"{base}_thumb.jpg"
+        webp_name = f"{base}.webp"
+        json_name = f"{base}.json"
+
+        save_kwargs = {"format": "JPEG", "quality": JPEG_QUALITY}
+        if exif_raw:
+            save_kwargs['exif'] = exif_raw
+        img.convert('RGB').save(UPLOAD_DIR / jpg_name, **save_kwargs)
+        thumb.convert('RGB').save(UPLOAD_DIR / thumb_name, format='JPEG', quality=85)
+        img.save(UPLOAD_DIR / webp_name, 'WEBP', quality=WEBP_QUALITY, method=6)
+
+        images.append(jpg_name)
+        thumbs.append(thumb_name)
+        webps.append(webp_name)
+        jfiles.append(json_name)
+
+        json_payload = {
+            'object_type': otype,
+            'record_id': int(aid),
+            'image_index': img_idx,
+            'filename_base': base,
+            'filename': jpg_name,
+            'thumb_filename': thumb_name,
+            'webp_filename': webp_name,
+            'timestamp': ts,
+            'client_ip': ip,
+            'user_agent': ua,
+            'gps': {'lat': gps_lat, 'lon': gps_lon, 'alt': gps_alt},
+            'exif': {
+                'datetime': exif_datetime,
+                'make': exif_make,
+                'model': exif_model,
+                'orientation': exif_orientation,
+            },
+            'fields': meta_values,
+            'record_images': list(images),
+            'record_thumbs': list(thumbs),
+            'record_webps': list(webps),
+            'record_image_json_files': list(jfiles),
+        }
+        (UPLOAD_DIR / json_name).write_text(json.dumps(json_payload, indent=2), encoding='utf-8')
+
+        # Update record lists and timestamps
+        du_sql = ''
+        du_params = []
+        if meta.get('field_meta', {}).get('date_updated', {}).get('server_now'):
+            du_sql = 'date_updated=?, '
+            du_params.append(now.strftime(TIMESTAMP_FORMAT))
+
+        sql = (
+            f"UPDATE {otype} SET {du_sql}date_last_saved=?, images_json=?, thumbs_json=?, webps_json=?, json_files_json=?, "
+            "width=?, height=?, timestamp=?, ip=?, user_agent=?, exif_datetime=?, exif_make=?, exif_model=?, exif_orientation=?, gps_lat=?, gps_lon=?, gps_alt=? "
+            "WHERE id=?"
+        )
+        params = du_params + [
+            now.strftime(TIMESTAMP_FORMAT),
+            json.dumps(images), json.dumps(thumbs), json.dumps(webps), json.dumps(jfiles),
+            width, height, ts, ip, ua,
+            exif_datetime, exif_make, exif_model, exif_orientation,
+            gps_lat, gps_lon, gps_alt,
+            int(aid),
+        ]
+        conn.execute(sql, params)
+
+    flash(f"Added image to record {aid}.")
+    return redirect(url_for('admin_edit', otype=otype, aid=aid))
 @app.route("/admin/edit/<otype>/<int:aid>", methods=["GET", "POST"])
 @requires_admin
 def admin_edit(otype, aid):
@@ -1396,13 +1636,17 @@ def admin_edit(otype, aid):
     with get_db() as conn:
         if request.method == "POST":
             updates = {}
+            # App-internal save timestamp
+            updates['date_last_saved'] = now.strftime(TIMESTAMP_FORMAT)
+            if meta.get('field_meta', {}).get('date_updated', {}).get('server_now'):
+                updates['date_updated'] = now.strftime(TIMESTAMP_FORMAT)
             for f in meta["input_fields"]:
                 label, col, coltype = f[0], f[1], f[2]
                 t = (coltype or "TEXT").upper()
                 fm = meta["field_meta"].get(col, {})
 
                 if fm.get('server_now'):
-                    # Server-managed timestamp/date (e.g., date_recorded)
+                    # Server-managed timestamp/date (e.g., date_last_saved)
                     from datetime import datetime
                     now = datetime.now()
                     updates[col] = now.strftime(DATE_FORMAT) if t == 'DATE' else now.strftime(TIMESTAMP_FORMAT)
@@ -1420,7 +1664,7 @@ def admin_edit(otype, aid):
                     updates[col] = json.dumps(selected, ensure_ascii=False, separators=(",", ":")) if selected else None
                     continue
 
-                # Server-managed timestamp/date (e.g., date_recorded)
+                # Server-managed timestamp/date (e.g., date_last_saved)
 
                 if fm.get('server_now'):
 
@@ -1454,12 +1698,6 @@ def admin_edit(otype, aid):
                     updates[col] = _normalize_timestamp_input(raw)
                 else:
                     updates[col] = raw
-            # Server-managed date_recorded: set on every admin save
-            if meta.get('field_meta', {}).get('date_recorded', {}).get('server_now'):
-                from datetime import datetime
-                now = datetime.now()
-                dr_type = (meta['field_meta']['date_recorded'].get('sql_type') or 'TEXT').upper().strip()
-                updates['date_recorded'] = now.strftime(DATE_FORMAT) if dr_type == 'DATE' else now.strftime(TIMESTAMP_FORMAT)
 
             if updates:
                 set_clause = ", ".join([f"{c}=?" for c in updates.keys()])
@@ -1473,9 +1711,11 @@ def admin_edit(otype, aid):
         flash("Not found")
         return redirect(url_for("admin_list", type=otype))
     g.current_type = otype
+    # Jinja templates often use mapping methods like .get(); sqlite3.Row does not provide .get.
+    # Normalize to a plain dict for template friendliness.
     return render_template(
         "admin_edit.html",
-        r=row,
+        r=dict(row),
         otype=otype,
         meta=meta,
         banner_title=make_banner_title("Edit", meta["label"], f"ID {aid}"),
