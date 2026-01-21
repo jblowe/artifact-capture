@@ -890,6 +890,8 @@ def submit():
     otype = (request.form.get("object_type") or "").strip().lower()
     if otype not in TYPE_META:
         flash("Unknown object type.")
+        conn.execute(sql, tuple(params))
+        conn.execute(sql, tuple(params))
         return redirect(url_for("form"))
 
     meta = TYPE_META[otype]
@@ -1274,9 +1276,7 @@ def submit():
         if du_sql:
             params.append(du_val)
         params.append(dls)
-        if du_sql:
-            params.append(du_val)
-        params += [dls_val, 
+        params += [
             json.dumps(images), json.dumps(thumbs), json.dumps(webps), json.dumps(jfiles),
             width, height, ts, ip, ua,
             exif_datetime, exif_make, exif_model, exif_orientation,
