@@ -1517,46 +1517,20 @@ def admin_add_image(otype, aid):
         flash('Please take or choose a photo.')
         return redirect(url_for('admin_edit', otype=otype, aid=aid))
 
-
-        # Remove corresponding files if present
-        if img_idx < len(images):
-            _safe_delete_upload(images[img_idx])
-            images.pop(img_idx)
-        if img_idx < len(thumbs):
-            _safe_delete_upload(thumbs[img_idx])
-            thumbs.pop(img_idx)
-        if img_idx < len(webps):
-            _safe_delete_upload(webps[img_idx])
-            webps.pop(img_idx)
-        if img_idx < len(jfiles):
-            _safe_delete_upload(jfiles[img_idx])
-            jfiles.pop(img_idx)
-
-        du_sql = ''
-        du_params = []
-        if meta.get('field_meta', {}).get('date_updated', {}).get('server_now'):
-            du_sql = 'date_updated=?, '
-            du_params.append(now.strftime(TIMESTAMP_FORMAT))
-
-        sql = (
-            f"UPDATE {otype} SET {du_sql}date_last_saved=?, images_json=?, thumbs_json=?, webps_json=?, json_files_json=? "
-            "WHERE id=?"
-        )
-        params = du_params + [
-            now.strftime(TIMESTAMP_FORMAT),
-            json.dumps(images), json.dumps(thumbs), json.dumps(webps), json.dumps(jfiles),
-            int(aid),
-        ]
-        conn.execute(sql, params)
-
-    flash('Deleted image.')
-    return redirect(url_for('admin_edit', otype=otype, aid=aid))
-
     ts = int(time.time())
     from datetime import datetime
     now = datetime.now()
     ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     ua = request.headers.get('User-Agent', '')
+
+    def _load_list(val):
+        if not val:
+            return []
+        try:
+            x = json.loads(val)
+            return x if isinstance(x, list) else []
+        except Exception:
+            return []
 
     with get_db() as conn:
         row = conn.execute(f"SELECT * FROM {otype} WHERE id=?", (aid,)).fetchone()
@@ -1566,15 +1540,6 @@ def admin_add_image(otype, aid):
 
         # sqlite3.Row does not support .get(); convert to dict for convenience
         row = dict(row)
-
-        def _load_list(val):
-            if not val:
-                return []
-            try:
-                x = json.loads(val)
-                return x if isinstance(x, list) else []
-            except Exception:
-                return []
 
         images = _load_list(row.get('images_json'))
         thumbs = _load_list(row.get('thumbs_json'))
@@ -1678,7 +1643,6 @@ def admin_add_image(otype, aid):
 
     flash(f"Added image to record {aid}.")
     return redirect(url_for('admin_edit', otype=otype, aid=aid))
-
 
 @app.post('/admin/<otype>/<int:aid>/delete_image/<int:img_idx>')
 @requires_admin
