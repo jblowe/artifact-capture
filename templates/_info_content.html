@@ -1,41 +1,32 @@
-{% include "_banner.html" %}
+{# Info content embedded inside index.html so it inherits the same <head>/layout #}
 <style>
   .lang-tabs { display:flex; gap:8px; flex-wrap:wrap; margin: 12px 0; }
   .lang-panel { display:none; }
   .lang-panel.active { display:block; }
   .doc-wrap :is(p,li) { line-height: 1.35; }
-
-  code { background: #f3f4f6; padding: 0.1rem 0.25rem; border-radius: 4px; }
-  pre code { display: block; padding: 1rem; overflow-x: auto; }
-  h1, h2, h3 { margin-top: 1.6rem; }
-  ul, ol { padding-left: 1.4rem; }
-  a { color: inherit; }
-  hr { border: 0; border-top: 1px solid #e5e7eb; margin: 2rem 0; }
 </style>
 
-<div class="page">
-  <div class="card">
-    <h2 style="margin:0 0 6px 0;">Info</h2>
+<div class="card">
+  <h2 style="margin:0 0 6px 0;">Info</h2>
 
-    <div class="lang-tabs">
-      <button class="btn primary" id="tab-th" type="button" onclick="switchLang('th')">🇹🇭 ไทย</button>
-      <button class="btn" id="tab-en" type="button" onclick="switchLang('en')">🇺🇸 English</button>
+  <div class="lang-tabs">
+    <button class="btn primary" id="tab-th" type="button" onclick="switchInfoLang('th')">🇹🇭 ไทย</button>
+    <button class="btn" id="tab-en" type="button" onclick="switchInfoLang('en')">🇺🇸 English</button>
+  </div>
+
+  <div class="doc-wrap">
+    <div id="panel-th" class="lang-panel active">
+      {% include "INSTRUCTIONS_TH.html" %}
     </div>
 
-    <div class="doc-wrap">
-      <div id="panel-th" class="lang-panel active">
-        {% include "INSTRUCTIONS_TH.html" %}
-      </div>
-
-      <div id="panel-en" class="lang-panel">
-        {% include "INSTRUCTIONS_EN.html" %}
-      </div>
+    <div id="panel-en" class="lang-panel">
+      {% include "INSTRUCTIONS_EN.html" %}
     </div>
   </div>
 </div>
 
 <script>
-  function switchLang(lang) {
+  function switchInfoLang(lang) {
     const thBtn = document.getElementById('tab-th');
     const enBtn = document.getElementById('tab-en');
     const thPanel = document.getElementById('panel-th');
@@ -58,7 +49,7 @@
   (function(){
     try {
       const pref = localStorage.getItem('info_lang');
-      if (pref === 'en') switchLang('en');
+      if (pref === 'en') switchInfoLang('en');
     } catch(e) {}
   })();
 </script>

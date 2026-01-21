@@ -12,7 +12,11 @@
 
 <div class="page">
 
-  <div class="card">
+
+  {% if page_mode == 'info' %}
+    {% include "_info_content.html" %}
+  {% else %}
+    <div class="card">
     <div class="tabs">
       {% for key, m in OBJECT_TYPES.items() %}
         <a class="tab {% if key == otype %}active{% endif %}" href="{{ url_for('index', type=key) }}">{{ m.label }}</a>
@@ -20,12 +24,15 @@
     </div>
 
     {% if not index_fields %}
-      <div style="margin-top:12px;" class="meta">No index fields are configured for this object type. Add an <code>index</code> list in <code>config.py</code> (e.g. <code>'index': ['temper','typology']</code>).</div>
+      <div style="margin-top:12px;" class="meta">No index fields are configured for this object type. Add an
+        <code>index</code> list in <code>config.py</code> (e.g. <code>'index': ['temper','typology']</code>).
+      </div>
     {% else %}
       <div class="actions" style="margin-top:10px; flex-wrap:wrap;">
         {% for f in index_fields %}
           {% set lbl = meta.field_meta.get(f, {}).get('label') or f %}
-          <a class="btn {% if f == field %}primary{% endif %}" href="{{ url_for('index', type=otype, field=f) }}">{{ lbl }}</a>
+          <a class="btn {% if f == field %}primary{% endif %}"
+             href="{{ url_for('index', type=otype, field=f) }}">{{ lbl }}</a>
         {% endfor %}
       </div>
 
@@ -56,7 +63,7 @@
                   {% endif %}
 
                   <table class="result-table compact-table" style="margin-top:10px;">
-	                    {% set max_fields = (meta.result_rows | map('length') | max) %}
+                    {% set max_fields = (meta.result_rows | map('length') | max) %}
                     {% for row in meta.result_rows %}
                       {% set ns = namespace(nonempty=[]) %}
                       {% for col in row %}
@@ -67,20 +74,20 @@
                       {% endfor %}
                       {% if ns.nonempty|length == 0 %}
                         {# skip rows with no data #}
-	                      {% elif row|length == 1 and ns.nonempty|length == 1 %}
+                      {% elif row|length == 1 and ns.nonempty|length == 1 %}
                         {% set col = ns.nonempty[0] %}
                         {% set fm = meta.field_meta.get(col, {}) %}
                         {% set vv = r[col] if r[col] is not none else '' %}
                         <tr>
-	                          <td class="label">{{ fm.get('label') or col }}</td>
-	                          <td colspan="{{ (max_fields * 2) - 1 }}">
-	                            {% if fm.get('widget') == 'radio' and vv %}
-	                              {% set selected = (vv|fromjson) %}
-	                              {{ selected|join(', ') }}
-	                            {% else %}
-	                              {{ vv }}
-	                            {% endif %}
-	                          </td>
+                          <td class="label">{{ fm.get('label') or col }}</td>
+                          <td colspan="{{ (max_fields * 2) - 1 }}">
+                            {% if fm.get('widget') == 'radio' and vv %}
+                              {% set selected = (vv|fromjson) %}
+                              {{ selected|join(', ') }}
+                            {% else %}
+                              {{ vv }}
+                            {% endif %}
+                          </td>
                         </tr>
                       {% else %}
                         <tr>
@@ -106,12 +113,11 @@
                 </div>
               {% endfor %}
             </div>
-
           </div>
         {% endfor %}
       </div>
     {% endif %}
-
+  {% endif %}
   </div>
 
 </div>

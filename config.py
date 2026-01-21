@@ -67,7 +67,7 @@ object_types = {
          'result_rows': [
              ['recorders'],
              ['tnumber', 'context', 'excavation_date'],
-             ['date_recorded', 'date_updated', 'date_last_saved'],
+             ['date_recorded', 'date_updated'],
              #['season', 'tnumber'],
              # ['excavation_unit', 'area', 'level'],
              #['context', 'excavation_date', 'date_recorded'],
@@ -122,7 +122,7 @@ object_types = {
          'result_rows': [
              ['recorders'],
              ['tnumber', 'context', 'excavation_date'],
-             ['date_recorded', 'date_updated', 'date_last_saved'],
+             ['date_recorded', 'date_updated'],
              #['season', 'tnumber'],
              # ['excavation_unit', 'area', 'level'],
              #['context', 'excavation_date', 'date_recorded'],

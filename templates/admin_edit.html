@@ -40,10 +40,12 @@
           <table class="form-table">
             <tr>
               <td class="label">Record ID</td>
-              <td><input type="text" value="{{ r['id'] }}" readonly></td>
+              <td class="mono"><strong>{{ r['id'] }}</strong></td>
             </tr>
 
             {% for col in meta.result_fields %}
+              {# Never present the primary key for editing, even if it appears in config layout/result fields. #}
+              {% if col != 'id' %}
               {% set fm = meta.field_meta.get(col, {}) %}
               {% set widget = fm.get('widget') %}
               {% set options = fm.get('options') %}
@@ -84,6 +86,7 @@
                   {% endif %}
                 </td>
               </tr>
+              {% endif %}
             {% endfor %}
           </table>
 
@@ -91,7 +94,6 @@
             <button class="btn primary" type="submit">Save changes</button>
             <a class="btn" href="{{ url_for('admin_list', type=otype) }}">Cancel</a>
           </div>
-          <div class="small" style="margin-top:8px;">“date_last_saved” is maintained internally on every save.</div>
         </form>
       </div>
 

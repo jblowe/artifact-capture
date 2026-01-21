@@ -81,6 +81,24 @@ app = Flask(__name__)
 app.secret_key = APP_SECRET
 
 
+@app.before_request
+def _log_all_posts_to_wsgi():
+    """Log all POSTs (including form fields) so they appear in Apache/mod_wsgi logs.
+
+    Note: Apache access logs do not include request bodies by default; this logs to
+    the application logger (typically the Apache error log under mod_wsgi).
+    """
+    try:
+        if request.method == "POST":
+            form_dict = {k: request.form.getlist(k) if len(request.form.getlist(k)) > 1 else request.form.get(k)
+                         for k in request.form.keys()}
+            files_dict = {k: (v.filename if v else "") for k, v in (request.files or {}).items()}
+            app.logger.info("POST %s form=%s files=%s", request.path, form_dict, files_dict)
+    except Exception:
+        # Never break requests due to logging.
+        pass
+
+
 def _parse_widget(widget_raw: str):
     """Parse config widget descriptors.
 
@@ -124,7 +142,15 @@ TYPE_META = {}
 
 # Columns that are managed by the server and should not be treated like
 # user-configured input fields (e.g., to avoid duplicate display).
-SYSTEM_COLUMNS = {"id", "gps_lat", "gps_lon", "gps_acc", "thumbs_json", "images_json", "json_files_json", "date_last_saved"}
+# Columns managed by the server (or otherwise "system/reserved").
+# These may be hidden by default in some views, but **must be allowed** to appear
+# if explicitly referenced in config.py layout_rows/result_rows.
+SYSTEM_COLUMNS = {
+    "id",
+    "gps_lat", "gps_lon", "gps_alt", "gps_acc",
+    "thumbs_json", "images_json", "webps_json", "json_files_json",
+    "date_last_saved", "date_recorded", "date_updated",
+}
 
 for otype, cfg in OBJECT_TYPES.items():
     if not isinstance(cfg, dict):
@@ -164,8 +190,12 @@ for otype, cfg in OBJECT_TYPES.items():
             widget_raw = f[3] if len(f) > 3 else ""
             widget, options = _parse_widget(widget_raw)
             sqlite_type = sql_type_str
-        # Special: if user defines date_updated as TIMESTAMP, manage it as NOW() on save.
+        # Special server-managed timestamps.
+        # - date_updated: if the user defines it as TIMESTAMP, manage it as NOW() on save.
+        # - date_recorded: if the user defines it as TIMESTAMP, manage it as NOW() on BOTH create and update.
         if str(col).lower() == "date_updated" and st_up.startswith("TIMESTAMP"):
+            server_now = True
+        if str(col).lower() == "date_recorded" and (st_up.startswith("TIMESTAMP") or st_up == "TIMESTAMP"):
             server_now = True
 
         field_meta[col] = {
@@ -184,11 +214,63 @@ for otype, cfg in OBJECT_TYPES.items():
     # result_rows controls which fields appear (and how they are arranged) in Recent and Edit views.
     # If not provided, we fall back to layout_rows; if still empty, show one field per row.
     result_rows_effective = result_rows or layout_rows or [[f[1]] for f in input_fields if (len(f) > 1 and f[1] not in SYSTEM_COLUMNS)]
+    # Allow "system/reserved" columns to be displayed if explicitly referenced in
+    # layout_rows/result_rows by adding minimal metadata for them.
+    referenced_cols = set()
+    for _r in (layout_rows or []):
+        for _c in (_r or []):
+            referenced_cols.add(_c)
+    for _r in (result_rows or []):
+        for _c in (_r or []):
+            referenced_cols.add(_c)
+
+    RESERVED_DEFAULTS = {
+        "id": {"label": "ID", "sqlite_type": "INTEGER", "sql_type": "INTEGER", "widget": "readonly", "options": None,
+               "constant_value": None, "server_now": False, "required": False},
+        "date_last_saved": {"label": "Date last saved", "sqlite_type": "TEXT", "sql_type": "TIMESTAMP", "widget": "text", "options": None,
+                            "constant_value": None, "server_now": True, "required": False},
+        "date_recorded": {"label": "Date recorded", "sqlite_type": "TEXT", "sql_type": "TIMESTAMP", "widget": "text", "options": None,
+                          "constant_value": None, "server_now": True, "required": False},
+        "date_updated": {"label": "Date updated", "sqlite_type": "TEXT", "sql_type": "TIMESTAMP", "widget": "text", "options": None,
+                         "constant_value": None, "server_now": True, "required": False},
+        "gps_lat": {"label": "GPS lat", "sqlite_type": "REAL", "sql_type": "FLOAT", "widget": "text", "options": None,
+                   "constant_value": None, "server_now": False, "required": False},
+        "gps_lon": {"label": "GPS lon", "sqlite_type": "REAL", "sql_type": "FLOAT", "widget": "text", "options": None,
+                   "constant_value": None, "server_now": False, "required": False},
+        "gps_alt": {"label": "GPS alt", "sqlite_type": "REAL", "sql_type": "FLOAT", "widget": "text", "options": None,
+                   "constant_value": None, "server_now": False, "required": False},
+        "gps_acc": {"label": "GPS acc", "sqlite_type": "REAL", "sql_type": "FLOAT", "widget": "text", "options": None,
+                   "constant_value": None, "server_now": False, "required": False},
+        "images_json": {"label": "Images", "sqlite_type": "TEXT", "sql_type": "TEXT", "widget": "text", "options": None,
+                        "constant_value": None, "server_now": False, "required": False},
+        "thumbs_json": {"label": "Thumbs", "sqlite_type": "TEXT", "sql_type": "TEXT", "widget": "text", "options": None,
+                        "constant_value": None, "server_now": False, "required": False},
+        "webps_json": {"label": "WebPs", "sqlite_type": "TEXT", "sql_type": "TEXT", "widget": "text", "options": None,
+                       "constant_value": None, "server_now": False, "required": False},
+        "json_files_json": {"label": "JSON files", "sqlite_type": "TEXT", "sql_type": "TEXT", "widget": "text", "options": None,
+                            "constant_value": None, "server_now": False, "required": False},
+    }
+
+    for _c in referenced_cols:
+        if _c not in field_meta and _c in RESERVED_DEFAULTS:
+            d = RESERVED_DEFAULTS[_c]
+            field_meta[_c] = {
+                "label": d["label"],
+                "col": _c,
+                "sql_type": d["sql_type"],
+                "sqlite_type": d["sqlite_type"],
+                "widget": d["widget"],
+                "options": d["options"],
+                "constant_value": d["constant_value"],
+                "server_now": d["server_now"],
+                "required": d["required"],
+            }
+
     cleaned = []
     for row in (result_rows_effective or []):
         cols = []
         for col in (row or []):
-            if col in field_meta and col not in SYSTEM_COLUMNS:
+            if col in field_meta:
                 cols.append(col)
         if cols:
             cleaned.append(cols)
@@ -202,7 +284,7 @@ for otype, cfg in OBJECT_TYPES.items():
     seen = set()
     for _row in (layout_rows or []):
         for _col in (_row or []):
-            if _col in field_meta and _col not in seen and _col not in SYSTEM_COLUMNS:
+            if _col in field_meta and _col not in seen:
                 layout_fields.append(_col)
                 seen.add(_col)
     TYPE_META[otype] = {
@@ -863,7 +945,19 @@ def exists():
         else:
             meta_values[col] = raw
 
-    meta_values = _apply_postprocess_values(otype, meta_values)
+    # Optional server-side postprocessing; on failure, return the values to the client
+    # and ask them to correct.
+    try:
+        meta_values = _apply_postprocess_values(otype, meta_values)
+    except Exception:
+        flash("post processing failed, please correct.")
+        try:
+            prefill_by_type = session.get('prefill_by_type', {}) or {}
+            prefill_by_type[otype] = dict(meta_values)
+            session['prefill_by_type'] = prefill_by_type
+        except Exception:
+            pass
+        return redirect(url_for('form', type=otype))
 
     signature_values = {}
     for fdef in meta["input_fields"]:
@@ -1415,11 +1509,21 @@ def index():
 
 @app.route("/info")
 def info():
-    """Stub page for future app information/help."""
+    # Render Info inside index.html so it inherits the same <head>/layout/styles.
     return render_template(
-        "info.html",
-        banner_title=make_banner_title("Instructions"),
+        "index.html",
+        banner_title=make_banner_title("Info", ""),
+        page_mode="info",
+        # Safe defaults for index template variables (unused in info mode)
+        otype=(list(TYPE_META.keys())[0] if TYPE_META else ""),
+        index_types=(list(TYPE_META.keys()) if TYPE_META else []),
+        field_name="",
+        field_label="",
+        values=[],
+        groupings={},
     )
+
+
 
 
 @app.route("/user")
@@ -1737,69 +1841,76 @@ def admin_edit(otype, aid):
     g.current_type = otype
     with get_db() as conn:
         if request.method == "POST":
-            updates = {}
             from datetime import datetime
             now = datetime.now()
-            # App-internal save timestamp
-            updates['date_last_saved'] = now.strftime(TIMESTAMP_FORMAT)
-            if meta.get('field_meta', {}).get('date_updated', {}).get('server_now'):
-                updates['date_updated'] = now.strftime(TIMESTAMP_FORMAT)
+            coerced: dict = {}
             for f in meta["input_fields"]:
-                label, col, coltype = f[0], f[1], f[2]
-                t = (coltype or "TEXT").upper()
+                label, col, coltype = f[0], f[1], (f[2] if len(f) > 2 else "TEXT")
+                t = (str(coltype or "TEXT")).upper().strip()
                 fm = meta["field_meta"].get(col, {})
 
-                if fm.get('server_now'):
-                    # Server-managed timestamp/date (e.g., date_last_saved)
-                    updates[col] = now.strftime(DATE_FORMAT) if t == 'DATE' else now.strftime(TIMESTAMP_FORMAT)
+                # Server-managed timestamp/date (e.g., date_updated/date_recorded)
+                if fm.get("server_now"):
+                    coerced[col] = now.strftime(DATE_FORMAT) if t == "DATE" else now.strftime(TIMESTAMP_FORMAT)
                     continue
-                t = (str(coltype or "TEXT")).upper().strip()
 
                 # Enforce CONSTANT fields as server-controlled values.
                 if t == "CONSTANT" or fm.get("widget") == "constant":
-                    updates[col] = str(fm.get("constant_value") or "")
+                    coerced[col] = str(fm.get("constant_value") or "")
                     continue
 
                 # RADIO fields are multi-select, stored as JSON list (TEXT).
                 if fm.get("widget") == "radio":
                     selected = [str(v).strip() for v in request.form.getlist(col) if str(v).strip()]
-                    updates[col] = json.dumps(selected, ensure_ascii=False, separators=(",", ":")) if selected else None
+                    coerced[col] = json.dumps(selected, ensure_ascii=False, separators=(",", ":")) if selected else None
                     continue
-
-                # Server-managed timestamp/date (e.g., date_last_saved)
-
-                if fm.get('server_now'):
-
-                    from datetime import datetime
-
-                    now = datetime.now()
-
-                    updates[col] = now.strftime(DATE_FORMAT) if t == 'DATE' else now.strftime(TIMESTAMP_FORMAT)
-
-                    continue
-
 
                 raw = (request.form.get(col) or "").strip()
                 if fm.get("widget") == "uppercase" and raw:
                     raw = raw.upper()
                 if not raw:
-                    updates[col] = None
+                    coerced[col] = None
                 elif t.startswith("INT"):
                     try:
-                        updates[col] = int(raw)
+                        coerced[col] = int(raw)
                     except ValueError:
-                        updates[col] = None
+                        coerced[col] = None
                 elif t.startswith("FLOAT") or t.startswith("REAL") or t.startswith("DOUBLE"):
                     try:
-                        updates[col] = float(raw)
+                        coerced[col] = float(raw)
                     except ValueError:
-                        updates[col] = None
+                        coerced[col] = None
                 elif t == "DATE":
-                    updates[col] = _normalize_date_input(raw)
+                    coerced[col] = _normalize_date_input(raw)
                 elif t == "TIMESTAMP":
-                    updates[col] = _normalize_timestamp_input(raw)
+                    coerced[col] = _normalize_timestamp_input(raw)
                 else:
-                    updates[col] = raw
+                    coerced[col] = raw
+
+            # Apply optional server-side postprocessing to Edit updates.
+            try:
+                coerced = _apply_postprocess_values(otype, coerced)
+            except Exception:
+                flash("post processing failed, please correct.")
+                row0 = conn.execute(f"SELECT * FROM {otype} WHERE id=?", (aid,)).fetchone()
+                r0 = dict(row0) if row0 else {}
+                r0.update(coerced or {})
+                return render_template(
+                    "admin_edit.html",
+                    r=r0,
+                    otype=otype,
+                    meta=meta,
+                    banner_title=make_banner_title("Edit", meta["label"], f"ID {aid}"),
+                )
+
+            updates = dict(coerced or {})
+            # App-internal save timestamp always bumps on edit.
+            updates["date_last_saved"] = now.strftime(TIMESTAMP_FORMAT)
+            if meta.get("field_meta", {}).get("date_updated", {}).get("server_now"):
+                updates["date_updated"] = now.strftime(TIMESTAMP_FORMAT)
+            # Special: date_recorded also bumps on every save if defined.
+            if meta.get("field_meta", {}).get("date_recorded", {}).get("server_now"):
+                updates["date_recorded"] = now.strftime(TIMESTAMP_FORMAT)
 
             if updates:
                 set_clause = ", ".join([f"{c}=?" for c in updates.keys()])
