@@ -984,10 +984,7 @@ def submit():
     otype = (request.form.get("object_type") or "").strip().lower()
     if otype not in TYPE_META:
         flash("Unknown object type.")
-        conn.execute(sql, tuple(params))
-        conn.execute(sql, tuple(params))
         return redirect(url_for("form"))
-
     meta = TYPE_META[otype]
     # submit_mode may be supplied by either a submit button (name/value) or a hidden input.
     submit_mode = (request.form.get("submit_mode") or "image").strip().lower()
