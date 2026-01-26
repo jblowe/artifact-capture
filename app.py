@@ -1388,7 +1388,7 @@ def recent():
     g.current_type = otype
 
     view = (request.args.get("view") or "para").strip().lower()
-    if view not in ("para", "table"):
+    if view not in ("para", "table", "grid"):
         view = "para"
 
     # Pagination (Recent)
@@ -1532,7 +1532,7 @@ def review():
         field = index_fields[0]
 
     view = (request.args.get("view") or "para").strip().lower()
-    if view not in ("para", "table"):
+    if view not in ("para", "table", "grid"):
         view = "para"
 
     # Pagination (applies to the record set selected by the index-field buttons)
@@ -1649,7 +1649,7 @@ def admin_list():
 
     q = request.args.get("q", "").strip()
     view = (request.args.get("view") or "para").strip().lower()
-    if view not in ("para", "table"):
+    if view not in ("para", "table", "grid"):
         view = "para"
 
     # Pagination

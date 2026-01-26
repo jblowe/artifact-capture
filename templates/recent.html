@@ -19,6 +19,7 @@
       {% endfor %}
     </div>
 
+    {# Pagination + view toggles (right-aligned, compact) #}
     <div style="display:flex; justify-content:flex-end; align-items:center; gap:10px; margin-top:10px; flex-wrap:wrap;">
       <div class="meta" style="white-space:nowrap;">
         {% if has_prev %}
@@ -51,31 +52,26 @@
       <div style="display:inline-flex; gap:6px;">
         <a class="btn {% if view == 'para' %}primary{% endif %}"
            href="{{ url_for('recent', type=otype, view='para', page=page, per_page=per_page) }}">paragraph</a>
-        <a class="btn {% if view == 'table' %}
-      {% include "_record_table.html" %}
-
-    {% else %}
-                      {{ v }}
-                    {% endif %}
-                  </td>
-                {% endfor %}
-                <td class="mono">
-                  {% if 'date_last_saved' in r.keys() and r['date_last_saved'] %}{{ r['date_last_saved'] }}
-                  {% elif 'date_updated' in r.keys() and r['date_updated'] %}{{ r['date_updated'] }}
-                  {% endif %}
-                </td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+        <a class="btn {% if view == 'table' %}primary{% endif %}"
+           href="{{ url_for('recent', type=otype, view='table', page=page, per_page=per_page) }}">table</a>
+        <a class="btn {% if view == 'grid' %}primary{% endif %}" href="{{ url_for(request.endpoint, type=otype, view='grid', page=page, per_page=per_page) }}">grid</a>
       </div>
+    </div>
 
-    {% else %}
+    {% if view == 'table' %}
+      {% include "_record_table.html" %}
+    {% elif view == 'grid' %}
+      {% for r in rows %}
+        {% include "_record_grid.html" %}
+      {% endfor %}
+{% else %}
       {% for r in rows %}
         <div class="card" style="margin-top:12px;">
           {% set mode = 'view' %}
           {% set show_recent_edit_btn = True %}
           {% set edit_form_id = '' %}
+          {# In Recent, we want images on the right #}
+          {% set images_side = 'right' %}
           {% include "_record_card.html" %}
         </div>
       {% endfor %}
