@@ -279,6 +279,13 @@ for otype, cfg in OBJECT_TYPES.items():
     fields_to_reset = list(cfg.get('fields_to_reset') or [])
     copy_from = (cfg.get('copy_from') or '').strip()
     index_fields = list(cfg.get('index') or [])
+    result_grid = list(cfg.get('result_grid') or [])
+    # Keep only known columns (user fields or system columns).
+    _rg_clean = []
+    for _c in result_grid:
+        if _c in field_meta or _c in SYSTEM_COLUMNS:
+            _rg_clean.append(_c)
+    result_grid = _rg_clean
     # Flattened unique list of layout field names (used by client-side helpers)
     layout_fields = []
     seen = set()
@@ -302,6 +309,7 @@ for otype, cfg in OBJECT_TYPES.items():
         "fields_to_reset": fields_to_reset,
         "copy_from": copy_from,
         "index_fields": index_fields,
+        "result_grid": result_grid,
         "field_meta": field_meta,
     }
 
