@@ -51,36 +51,10 @@
       <div style="display:inline-flex; gap:6px;">
         <a class="btn {% if view == 'para' %}primary{% endif %}"
            href="{{ url_for('recent', type=otype, view='para', page=page, per_page=per_page) }}">paragraph</a>
-        <a class="btn {% if view == 'table' %}primary{% endif %}"
-           href="{{ url_for('recent', type=otype, view='table', page=page, per_page=per_page) }}">table</a>
-      </div>
-    </div>
+        <a class="btn {% if view == 'table' %}
+      {% include "_record_table.html" %}
 
-    {% if view == 'table' %}
-      <div style="overflow:auto; margin-top:10px;">
-        <table class="grid-table">
-          <thead>
-            <tr>
-              <th>ID</th>
-              {% for col in meta.result_fields %}
-                {% set fm = meta.field_meta.get(col, {}) %}
-                <th>{{ fm.get('label') or col }}</th>
-              {% endfor %}
-              <th>Updated</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for r in rows %}
-              <tr>
-                <td class="mono"><strong>{{ r['id'] }}</strong></td>
-                {% for col in meta.result_fields %}
-                  {% set fm = meta.field_meta.get(col, {}) %}
-                  {% set v = r[col] if r[col] is not none else '' %}
-                  <td>
-                    {% if fm.get('widget') == 'radio' and v %}
-                      {% set selected = (v|fromjson) %}
-                      {{ selected|join(', ') }}
-                    {% else %}
+    {% else %}
                       {{ v }}
                     {% endif %}
                   </td>

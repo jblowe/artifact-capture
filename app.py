@@ -1526,14 +1526,55 @@ def review():
     g.current_type = otype
 
     meta = TYPE_META[otype]
-    index_fields = [f for f in (meta.get('index_fields') or []) if f in meta.get('field_meta', {})]
-    field = (request.args.get('field') or (index_fields[0] if index_fields else '')).strip()
+    index_fields = [f for f in (meta.get("index_fields") or []) if f in meta.get("field_meta", {})]
+    field = (request.args.get("field") or (index_fields[0] if index_fields else "")).strip()
     if field not in index_fields and index_fields:
         field = index_fields[0]
 
-    groups = []
+    view = (request.args.get("view") or "para").strip().lower()
+    if view not in ("para", "table"):
+        view = "para"
+
+    # Pagination (applies to the record set selected by the index-field buttons)
+    try:
+        page = int(request.args.get("page") or "1")
+    except ValueError:
+        page = 1
+    page = max(page, 1)
+
+    try:
+        per_page = int(request.args.get("per_page") or "25")
+    except ValueError:
+        per_page = 25
+    per_page_choices = [10, 25, 50, 100]
+    if per_page not in per_page_choices:
+        per_page = 25
+
+    rows = []
+    total = 0
+    start_n = end_n = 0
+    has_prev = has_next = False
+
     if field:
-        groups = _index_groups_for_field(otype, field)
+        offset = (page - 1) * per_page
+        # Basic "has data" filter for the chosen field. Also excludes the empty JSON list string for multi-select fields.
+        where = f'("{field}" IS NOT NULL AND TRIM(CAST("{field}" AS TEXT)) != "" AND CAST("{field}" AS TEXT) != ?)'
+        with get_db() as conn:
+            total = conn.execute(f"SELECT COUNT(*) AS n FROM {otype} WHERE {where}", ("[]",)).fetchone()["n"]
+            rows = conn.execute(
+                f'SELECT * FROM {otype} WHERE {where} ORDER BY id DESC LIMIT ? OFFSET ?',
+                ("[]", per_page, offset),
+            ).fetchall()
+
+        start_n = offset + 1 if total and rows else 0
+        end_n = offset + len(rows) if total and rows else 0
+        has_prev = page > 1
+        has_next = (offset + per_page) < total
+
+    def _q(**kw):
+        base = {"type": otype, "field": field, "view": view, "page": page, "per_page": per_page}
+        base.update(kw)
+        return base
 
     return render_template(
         "index.html",
@@ -1542,7 +1583,18 @@ def review():
         meta=meta,
         index_fields=index_fields,
         field=field,
-        groups=groups,
+        view=view,
+        rows=rows,
+        page=page,
+        per_page=per_page,
+        per_page_choices=per_page_choices,
+        total=total,
+        start_n=start_n,
+        end_n=end_n,
+        has_prev=has_prev,
+        has_next=has_next,
+        prev_q=_q(page=page - 1),
+        next_q=_q(page=page + 1),
         banner_title=make_banner_title("Review", meta["label"]),
     )
 

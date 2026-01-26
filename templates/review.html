@@ -3,7 +3,9 @@
   Rendered inside index.html so it inherits the shared <head>/banner/styles.
 
   Expected vars (provided by /review route):
-  - otype, meta, index_fields, field, groups, OBJECT_TYPES
+  - otype, meta, index_fields, field, view
+  - rows, page, per_page, per_page_choices, total, start_n, end_n, has_prev, has_next, prev_q, next_q
+  - OBJECT_TYPES
 #}
 
 <div class="card">
@@ -22,30 +24,60 @@
     <div class="actions" style="margin-top:10px; flex-wrap:wrap;">
       {% for f in index_fields %}
         {% set lbl = meta.field_meta.get(f, {}).get('label') or f %}
-        <a class="btn {% if f == field %}primary{% endif %}" href="{{ url_for('review', type=otype, field=f) }}">{{ lbl }}</a>
+        <a class="btn {% if f == field %}primary{% endif %}"
+           href="{{ url_for('review', type=otype, field=f, view=view, page=1, per_page=per_page) }}">{{ lbl }}</a>
       {% endfor %}
     </div>
 
-    <div style="margin-top:14px;">
-      {% for val, recs in groups %}
-        <div class="card" style="margin-bottom:12px;">
-          <div style="display:flex; justify-content:space-between; gap:10px; align-items:baseline; flex-wrap:wrap;">
-            <div style="font-weight:800;">{{ val }}</div>
-            <div class="meta">{{ recs|length }} record(s)</div>
-          </div>
+    <div style="display:flex; justify-content:flex-end; align-items:center; gap:10px; margin-top:10px; flex-wrap:wrap;">
+      <div class="meta" style="white-space:nowrap;">
+        {% if has_prev %}
+          <a href="{{ url_for('review', **prev_q) }}">« Previous</a>
+        {% else %}
+          <span style="opacity:.5;">« Previous</span>
+        {% endif %}
+        &nbsp;|&nbsp;
+        {{ start_n }} - {{ end_n }} of {{ total }}
+        &nbsp;|&nbsp;
+        {% if has_next %}
+          <a href="{{ url_for('review', **next_q) }}">Next »</a>
+        {% else %}
+          <span style="opacity:.5;">Next »</span>
+        {% endif %}
+      </div>
 
-          <div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:10px;">
-            {% for r in recs %}
-              <div class="card" style="min-width:260px; flex:1 1 360px;">
-                {% set mode = 'view' %}
-                {% set show_recent_edit_btn = False %}
-                {% set edit_form_id = '' %}
-                {% include "_record_card.html" %}
-              </div>
-            {% endfor %}
-          </div>
+      <form method="get" action="{{ url_for('review') }}" style="display:inline-flex; align-items:center; gap:6px; margin:0;">
+        <input type="hidden" name="type" value="{{ otype }}">
+        <input type="hidden" name="field" value="{{ field }}">
+        <input type="hidden" name="view" value="{{ view }}">
+        <input type="hidden" name="page" value="1">
+        <select name="per_page" onchange="this.form.submit()">
+          {% for n in per_page_choices %}
+            <option value="{{ n }}" {% if per_page == n %}selected{% endif %}>{{ n }}</option>
+          {% endfor %}
+        </select>
+        <span class="meta">per page</span>
+      </form>
+
+      <div style="display:inline-flex; gap:6px;">
+        <a class="btn {% if view == 'para' %}primary{% endif %}"
+           href="{{ url_for('review', type=otype, field=field, view='para', page=page, per_page=per_page) }}">paragraph</a>
+        <a class="btn {% if view == 'table' %}primary{% endif %}"
+           href="{{ url_for('review', type=otype, field=field, view='table', page=page, per_page=per_page) }}">table</a>
+      </div>
+    </div>
+
+    {% if view == 'table' %}
+      {% include "_record_table.html" %}
+    {% else %}
+      {% for r in rows %}
+        <div class="card" style="margin-top:12px;">
+          {% set mode = 'review' %}
+          {% set show_recent_edit_btn = False %}
+          {% set edit_form_id = '' %}
+          {% include "_record_card.html" %}
         </div>
       {% endfor %}
-    </div>
+    {% endif %}
   {% endif %}
 </div>
