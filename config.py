@@ -47,6 +47,7 @@ object_types = {
          'fields_to_reset': ['context', 'tnumber', 'excavation_date', 'notes'],
          'copy_from': 'artifacts',
          'index': ['tnumber', 'context', 'excavation_date'],
+         'result_grid': ['tnumber', 'context'],
          'input_fields': [
              ('Recorder(s)', 'recorders', 'TEXT', RECORDERS),
              ('T-Number', 'tnumber', 'TEXT'),
@@ -88,6 +89,7 @@ object_types = {
          'filename_format': 'ART_{season}_Unit{excavation_unit}_T{tnumber}_Lot_{lot}_Area{area}_Level_{level}_ID{record_id}',
          'fields_to_reset': ['temper', 'typology_number', 'collar_height', 'rim_diameter', 'surface_treatment', 'notes'],
          'index': ['surface_treatment', 'typology_number', 'temper', 'context', 'vessel_type'],
+         'result_grid': ['tnumber', 'context'],
          'copy_from': 'bags',
          'input_fields': [
              ('Recorder(s)', 'recorders', 'TEXT', RECORDERS),
@@ -148,6 +150,7 @@ object_types = {
         {'label': 'Photographs',
          'filename_format': 'PHOTO_{site_name}_{shot_type}ID{record_id}',
          'fields_to_reset': [],
+         'result_grid': ['photographer', 'shot_type'],
          'input_fields': [
              ('Photographer', 'photographer', 'TEXT', RECORDERS),
              SEASON, CONTEXT, EX_UNIT, AREA, LEVEL, EX_DATE,
