@@ -71,9 +71,11 @@
     {% if view == 'table' %}
       {% include "_record_table.html" %}
     {% elif view == 'grid' %}
-      {% for r in rows %}
-        {% include "_record_grid.html" %}
-      {% endfor %}
+      <div class="grid-wrap">
+        {% for r in rows %}
+          {% include "_record_grid.html" %}
+        {% endfor %}
+      </div>
 {% else %}
       {% for r in rows %}
         <div class="card" style="margin-top:12px;">

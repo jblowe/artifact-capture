@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="{{ url_for('static', filename='styles/app.css') }}">
+  <style>:root{--grid-max-width: {{ grid_max_width }}px;}</style>
   <script defer src="{{ url_for('static', filename='js/app.js') }}"></script>
   <title>Recent</title>
 </head>
@@ -61,9 +62,11 @@
     {% if view == 'table' %}
       {% include "_record_table.html" %}
     {% elif view == 'grid' %}
-      {% for r in rows %}
-        {% include "_record_grid.html" %}
-      {% endfor %}
+      <div class="grid-wrap">
+        {% for r in rows %}
+          {% include "_record_grid.html" %}
+        {% endfor %}
+      </div>
 {% else %}
       {% for r in rows %}
         <div class="card" style="margin-top:12px;">

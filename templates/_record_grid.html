@@ -1,10 +1,9 @@
-
 {# Grid renderer: images grid + hanging-indent text from meta.result_grid #}
 {% set images = (r['images_json']|fromjson) if ('images_json' in r.keys() and r['images_json']) else [] %}
 {% set thumbs = (r['thumbs_json']|fromjson) if ('thumbs_json' in r.keys() and r['thumbs_json']) else [] %}
 
-<div class="grid-card" style="margin:10px 0;">
-  <div class="grid-images" style="display:flex; flex-wrap:wrap; gap:6px;">
+<div class="grid-card">
+  <div class="grid-images">
     {% if thumbs %}
       {% for t in thumbs %}
         {% set href = (images[loop.index0] if images and (images|length > loop.index0) else t) %}
@@ -18,18 +17,21 @@
           <img class="thumb" src="{{ url_for('serve_upload', fname=img) }}" alt="image">
         </a>
       {% endfor %}
+    {% else %}
+      <img class="grid-placeholder" src="{{ url_for('static', filename='images/placeholder.png') }}" alt="(no image)">
     {% endif %}
   </div>
 
-  {% set fields = meta.result_grid if meta.get('result_grid') else [] %}
+  {% set fields = meta.get('result_grid') or [] %}
   {% if fields %}
-    <p class="grid-text" style="margin-top:6px; padding-left:1.2em; text-indent:-1.2em;">
-      {% for f in fields %}
-        {% if f in r.keys() and r[f] %}
-          {{ r[f] }}
-          {% if not loop.last %} — {% endif %}
-        {% endif %}
-      {% endfor %}
-    </p>
+    {% set parts = [] %}
+    {% for f in fields %}
+      {% if f in r.keys() and r[f] %}
+        {% set _ = parts.append(r[f]|string) %}
+      {% endif %}
+    {% endfor %}
+    {% if parts %}
+      <p class="grid-text">{{ parts|join(' · ') }}</p>
+    {% endif %}
   {% endif %}
 </div>

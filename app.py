@@ -78,6 +78,17 @@ def _env_bool(name: str, default: bool = False) -> bool:
 #   2) Otherwise fall back to config.GPS_ENABLED (if present), else False.
 GPS_ENABLED = _env_bool("ARTCAP_GPS_ENABLED", default=getattr(config, "GPS_ENABLED", False))
 app = Flask(__name__)
+
+# Grid view sizing (can be overridden in config.py)
+GRID_MAX_WIDTH = int(getattr(config, "GRID_MAX_WIDTH", getattr(config, "grid_max_width", 500)))
+
+@app.context_processor
+def inject_ui_globals():
+    # Make a few UI globals available to all templates
+    return {
+        "grid_max_width": GRID_MAX_WIDTH,
+    }
+
 app.secret_key = APP_SECRET
 
 
@@ -279,7 +290,7 @@ for otype, cfg in OBJECT_TYPES.items():
     fields_to_reset = list(cfg.get('fields_to_reset') or [])
     copy_from = (cfg.get('copy_from') or '').strip()
     index_fields = list(cfg.get('index') or [])
-    result_grid = list(cfg.get('result_grid') or [])
+    result_grid = list(cfg.get('result_grid') or cfg.get('result_gird') or [])
     # Keep only known columns (user fields or system columns).
     _rg_clean = []
     for _c in result_grid:
