@@ -1,0 +1,170 @@
+{# Shared metadata table renderer.
+   Expects: r, meta, mode ('view'|'edit'|'index'), otype
+   Optional:
+     - edit_form_id (edit mode)
+     - skip_empty_rows (default True for view/index, False for edit)
+     - index_colspan (default True in index mode)
+#}
+
+{% set skip_empty_rows = skip_empty_rows if skip_empty_rows is defined else (mode != 'edit') %}
+{% set index_colspan = index_colspan if index_colspan is defined else (mode == 'index') %}
+{% set max_fields = (meta.result_rows | map('length') | max) if meta.result_rows else 1 %}
+
+<table class="result-table compact-table" style="width:100%;">
+  {% if mode == 'edit' %}
+    <tr>
+      <td class="label" style="width:35%;">Record ID</td>
+      <td class="mono"><strong>{{ r['id'] }}</strong></td>
+    </tr>
+  {% endif %}
+
+  {% for row in meta.result_rows %}
+    {% if index_colspan %}
+      {# In index mode: apply "skip rows with no data" and the label+colspan rule #}
+      {% set ns = namespace(nonempty=[]) %}
+      {% for col in row %}
+        {% if col != 'id' %}
+          {% set vv = r[col] if (col in r.keys() and r[col] is not none) else '' %}
+          {% if vv %}
+            {% set ns.nonempty = ns.nonempty + [col] %}
+          {% endif %}
+        {% endif %}
+      {% endfor %}
+
+      {% if ns.nonempty|length == 0 and skip_empty_rows %}
+        {# skip #}
+      {% elif row|length == 1 and ns.nonempty|length == 1 %}
+        {% set col = ns.nonempty[0] %}
+        {% set fm = meta.field_meta.get(col, {}) %}
+        {% set widget = fm.get('widget') %}
+        {% set options = fm.get('options') %}
+        {% set vv = r[col] if (col in r.keys() and r[col] is not none) else '' %}
+        <tr>
+          <td class="label">{{ fm.get('label') or col }}</td>
+          <td colspan="{{ (max_fields * 2) - 1 }}">
+            {% if widget == 'radio' and vv %}
+              {% set selected = (vv|fromjson) %}
+              {{ selected|join(', ') }}
+            {% else %}
+              {{ vv }}
+            {% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr>
+          {% for col in row %}
+            {% if col != 'id' %}
+              {% set fm = meta.field_meta.get(col, {}) %}
+              {% set widget = fm.get('widget') %}
+              {% set options = fm.get('options') %}
+              {% set vv = r[col] if (col in r.keys() and r[col] is not none) else '' %}
+              {% if (not skip_empty_rows) or vv %}
+                <td class="label">{{ fm.get('label') or col }}</td>
+                <td>
+                  {% if mode == 'edit' %}
+                    {# Edit widgets #}
+                    {% if widget == 'constant' %}
+                      <input type="text" name="{{ col }}" value="{{ fm.get('constant_value') or '' }}" readonly>
+
+                    {% elif widget == 'radio' and options %}
+                      {% set selected = (vv|fromjson) if vv else [] %}
+                      <div class="radio-group">
+                        {% for opt in options %}
+                          <label class="check-item">
+                            <input type="checkbox" name="{{ col }}" value="{{ opt }}" {% if opt in selected %}checked{% endif %}> {{ opt }}
+                          </label>
+                        {% endfor %}
+                      </div>
+
+                    {% elif widget == 'dropdown' and options %}
+                      <select name="{{ col }}">
+                        <option value=""></option>
+                        {% for opt in options %}
+                          <option value="{{ opt }}" {% if vv == opt %}selected{% endif %}>{{ opt }}</option>
+                        {% endfor %}
+                      </select>
+
+                    {% else %}
+                      {% if fm.get('server_now') %}
+                        <input type="text" name="{{ col }}" value="{{ vv }}" readonly>
+                      {% elif col in ['notes','description'] %}
+                        <textarea name="{{ col }}" rows="3">{{ vv }}</textarea>
+                      {% else %}
+                        <input type="text" name="{{ col }}" value="{{ vv }}"{% if widget == "uppercase" %} style="text-transform: uppercase;" autocapitalize="characters"{% endif %}>
+                      {% endif %}
+                    {% endif %}
+                  {% else %}
+                    {# View widgets #}
+                    {% if widget == 'radio' and vv %}
+                      {% set selected = (vv|fromjson) %}
+                      {{ selected|join(', ') }}
+                    {% else %}
+                      {{ vv }}
+                    {% endif %}
+                  {% endif %}
+                </td>
+              {% endif %}
+            {% endif %}
+          {% endfor %}
+        </tr>
+      {% endif %}
+
+    {% else %}
+      {# Non-index modes: one row per field (label/value), skipping empties in view #}
+      {% for col in row %}
+        {% if col != 'id' %}
+          {% set fm = meta.field_meta.get(col, {}) %}
+          {% set widget = fm.get('widget') %}
+          {% set options = fm.get('options') %}
+          {% set vv = r[col] if (col in r.keys() and r[col] is not none) else '' %}
+          {% if (mode == 'edit') or (not skip_empty_rows) or vv %}
+            <tr>
+              <td class="label" style="width:35%;">{{ fm.get('label') or col }}</td>
+              <td>
+                {% if mode == 'edit' %}
+                  {% if widget == 'constant' %}
+                    <input type="text" name="{{ col }}" value="{{ fm.get('constant_value') or '' }}" readonly>
+
+                  {% elif widget == 'radio' and options %}
+                    {% set selected = (vv|fromjson) if vv else [] %}
+                    <div class="radio-group">
+                      {% for opt in options %}
+                        <label class="check-item">
+                          <input type="checkbox" name="{{ col }}" value="{{ opt }}" {% if opt in selected %}checked{% endif %}> {{ opt }}
+                        </label>
+                      {% endfor %}
+                    </div>
+
+                  {% elif widget == 'dropdown' and options %}
+                    <select name="{{ col }}">
+                      <option value=""></option>
+                      {% for opt in options %}
+                        <option value="{{ opt }}" {% if vv == opt %}selected{% endif %}>{{ opt }}</option>
+                      {% endfor %}
+                    </select>
+
+                  {% else %}
+                    {% if fm.get('server_now') %}
+                      <input type="text" name="{{ col }}" value="{{ vv }}" readonly>
+                    {% elif col in ['notes','description'] %}
+                      <textarea name="{{ col }}" rows="3">{{ vv }}</textarea>
+                    {% else %}
+                      <input type="text" name="{{ col }}" value="{{ vv }}"{% if widget == "uppercase" %} style="text-transform: uppercase;" autocapitalize="characters"{% endif %}>
+                    {% endif %}
+                  {% endif %}
+                {% else %}
+                  {% if widget == 'radio' and vv %}
+                    {% set selected = (vv|fromjson) %}
+                    {{ selected|join(', ') }}
+                  {% else %}
+                    {{ vv }}
+                  {% endif %}
+                {% endif %}
+              </td>
+            </tr>
+          {% endif %}
+        {% endif %}
+      {% endfor %}
+    {% endif %}
+  {% endfor %}
+</table>

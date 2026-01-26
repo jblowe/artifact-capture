@@ -19,99 +19,11 @@
     {% endif %}
   {% endwith %}
 
-  <div class="card">
-    <div class="card-hd">
-      <div>
-        <div style="font-weight:800;">Edit {{ meta.label }} #{{ r['id'] }}</div>
-        <div class="meta">{% if r['date_updated'] %}Updated: {{ r['date_updated'] }}{% endif %}</div>
-      </div>
-      <div class="actions">
-        <form method="post" action="{{ url_for('admin_delete', otype=otype, aid=r['id']) }}" style="margin:0;" onsubmit="return confirm('Delete {{ meta.label }} {{ r['id'] }}? This will remove the DB row and all attached files.');">
-          <button class="btn danger icon-btn" type="submit" aria-label="Delete" title="Delete">
-  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M5.5 5.5A.5.5 0 0 1 6 6v7a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5.5a.5.5 0 0 1 .5-.5h.5a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0V6a.5.5 0 0 1-.5-.5z"/><path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3h11V2h-11v1z"/></svg>
-</button>
-        </form>
-      </div>
-    </div>
-
-    <div class="grid">
-      <div>
-        <form method="post" action="{{ url_for('admin_edit', otype=otype, aid=r['id']) }}">
-          <table class="form-table">
-            <tr>
-              <td class="label">Record ID</td>
-              <td class="mono"><strong>{{ r['id'] }}</strong></td>
-            </tr>
-
-            {% for col in meta.result_fields %}
-              {# Never present the primary key for editing, even if it appears in config layout/result fields. #}
-              {% if col != 'id' %}
-              {% set fm = meta.field_meta.get(col, {}) %}
-              {% set widget = fm.get('widget') %}
-              {% set options = fm.get('options') %}
-              {% set val = r[col] if r[col] is not none else '' %}
-
-              <tr>
-                <td class="label">{{ fm.get('label') or col }}</td>
-                <td>
-                  {% if widget == 'constant' %}
-                    <input type="text" name="{{ col }}" value="{{ fm.get('constant_value') or '' }}" readonly>
-
-                  {% elif widget == 'radio' and options %}
-                    {% set selected = (val|fromjson) if val else [] %}
-                    <div class="radio-group">
-                      {% for opt in options %}
-                        <label class="check-item">
-                          <input type="checkbox" name="{{ col }}" value="{{ opt }}" {% if opt in selected %}checked{% endif %}> {{ opt }}
-                        </label>
-                      {% endfor %}
-                    </div>
-
-                  {% elif widget == 'dropdown' and options %}
-                    <select name="{{ col }}">
-                      <option value=""></option>
-                      {% for opt in options %}
-                        <option value="{{ opt }}" {% if val == opt %}selected{% endif %}>{{ opt }}</option>
-                      {% endfor %}
-                    </select>
-
-                  {% else %}
-                    {% if fm.get('server_now') %}
-                      <input type="text" name="{{ col }}" value="{{ val }}" readonly>
-                    {% elif col in ['notes','description'] %}
-                      <textarea name="{{ col }}" rows="3">{{ val }}</textarea>
-                    {% else %}
-                      <input type="text" name="{{ col }}" value="{{ val }}"{% if widget == "uppercase" %} style="text-transform: uppercase;" autocapitalize="characters"{% endif %}>
-                    {% endif %}
-                  {% endif %}
-                </td>
-              </tr>
-              {% endif %}
-            {% endfor %}
-          </table>
-
-          <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;">
-            <button class="btn primary" type="submit">Save changes</button>
-            <a class="btn" href="{{ url_for('admin_list', type=otype) }}">Cancel</a>
-          </div>
-        </form>
-      </div>
-
-      <div>
-        <form method="post" action="{{ url_for('admin_add_image', otype=otype, aid=r['id']) }}" enctype="multipart/form-data" style="margin-bottom:12px;">
-          <div class="small" style="font-weight:700;margin-bottom:6px;">Add image</div>
-          <label class="btn primary file-btn" for="edit__photo"><span class="file-btn-text">Choose file</span></label>
-          <input id="edit__photo" type="file" name="photo" accept="image/*" capture="environment" style="display:none" onchange="updatePhotoFilename('edit', this)">
-          <span class="small file-name" id="edit__photo_name"></span>
-          <div style="margin-top:8px;">
-            <button class="btn primary" type="submit">Add image</button>
-          </div>
-        </form>
-
-        {% set allow_delete = True %}
-        {% include "_admin_images.html" %}
-      </div>
-    </div>
+  <div class="card" style="margin-top:12px;">
+    {% set mode = 'edit' %}
+    {% set show_recent_edit_btn = False %}
+    {% set edit_form_id = 'editForm' %}
+    {% include "_record_card.html" %}
   </div>
 </div>
 

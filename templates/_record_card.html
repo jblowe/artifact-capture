@@ -1,0 +1,75 @@
+{# Shared record card renderer for Recent, Edit, and Index.
+   Expects: r, meta, otype, mode ('view'|'edit'|'index')
+   Optional:
+     - images_side: 'right' (default) or 'left'
+     - show_recent_edit_btn (view mode)
+     - edit_form_id (edit mode)
+#}
+
+{% set images_side = images_side if images_side is defined else ('left' if mode == 'edit' else 'right') %}
+{% set show_id_header = show_id_header if show_id_header is defined else True %}
+{% set show_recent_edit_btn = show_recent_edit_btn if show_recent_edit_btn is defined else False %}
+
+<div style="display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap;">
+
+  {% if images_side == 'left' %}
+    <div style="flex:0 0 300px; min-width:240px;">
+      {% set allow_delete = (mode == 'edit') %}
+      {% include "_admin_images.html" %}
+    </div>
+  {% endif %}
+
+  <div style="flex:1 1 420px; min-width:280px;">
+    {% if show_id_header %}<div style="font-weight:800; margin-bottom:8px;"><strong>{{ r['id'] }}</strong></div>{% endif %}
+
+    {% if mode == 'edit' %}
+      <form id="{{ edit_form_id }}" method="post" action="{{ url_for('admin_edit', otype=otype, aid=r['id']) }}">
+        {% set index_colspan = False %}
+        {% include "_record_meta_table.html" %}
+      </form>
+    {% else %}
+      {% set index_colspan = (mode == 'index') %}
+      {% include "_record_meta_table.html" %}
+    {% endif %}
+
+    {% set updated_val = (r['date_last_saved'] if ('date_last_saved' in r.keys() and r['date_last_saved']) else (r['date_updated'] if ('date_updated' in r.keys() and r['date_updated']) else (r['date_recorded'] if ('date_recorded' in r.keys() and r['date_recorded']) else ''))) %}
+    {% if updated_val %}
+      <div class="meta" style="margin-top:6px;">
+        {% if mode == 'view' and show_recent_edit_btn %}
+          <a class="btn" style="padding:3px 8px; font-size:12px; margin-right:6px;"
+             href="{{ url_for('admin_edit', otype=otype, aid=r['id']) }}">Edit</a>
+        {% endif %}
+        Updated: {{ updated_val }}
+      </div>
+    {% endif %}
+  </div>
+
+  {% if images_side == 'right' %}
+    <div style="flex:0 0 300px; min-width:240px;">
+      {% set allow_delete = (mode == 'edit') %}
+      {% include "_admin_images.html" %}
+    </div>
+  {% endif %}
+
+  {% if mode == 'edit' %}
+    <div style="flex:0 0 220px; min-width:200px;">
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <button class="btn primary" type="submit" form="{{ edit_form_id }}">Save</button>
+
+        <form method="post" action="{{ url_for('admin_add_image', otype=otype, aid=r['id']) }}" enctype="multipart/form-data" style="margin:0;">
+          <label class="meta" style="display:block; margin-bottom:4px;">Add image</label>
+          <input type="file" name="photo" accept="image/*" style="margin-bottom:6px;">
+          <button class="btn" type="submit">Add Image</button>
+        </form>
+
+        <form method="post" action="{{ url_for('admin_delete', otype=otype, aid=r['id']) }}" style="margin:0;"
+              onsubmit="return confirm('Delete {{ meta.label }} {{ r['id'] }}? This will remove the DB row and all attached files.');">
+          <button class="btn danger" type="submit">Delete record</button>
+        </form>
+
+        <a class="btn" href="{{ url_for('recent', type=otype, view='para') }}">Back to Recent</a>
+      </div>
+    </div>
+  {% endif %}
+
+</div>
