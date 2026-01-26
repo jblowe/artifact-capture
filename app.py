@@ -358,7 +358,7 @@ def inject_globals():
         'upload': endpoint in ('form',),
         'recent': endpoint in ('recent',),
         'edit': endpoint.startswith('admin_'),
-        'index': endpoint in ('index',),
+        'review': endpoint in ('review', 'index',),
         'info': endpoint in ('info',),
         'user': endpoint in ('user',),
     }
@@ -367,7 +367,7 @@ def inject_globals():
         {'key': 'upload', 'label': 'Upload', 'url': url_for('form', type=ct), 'active': active['upload']},
         {'key': 'recent', 'label': 'Recent', 'url': url_for('recent', type=ct), 'active': active['recent']},
         {'key': 'edit', 'label': 'Edit', 'url': url_for('admin_list', type=ct), 'active': active['edit']},
-        {'key': 'index', 'label': 'Index', 'url': url_for('index', type=ct), 'active': active['index']},
+        {'key': 'review', 'label': 'Review', 'url': url_for('review', type=ct), 'active': active['review']},
         {'key': 'info', 'label': 'Info', 'url': url_for('info'), 'active': active['info']},
         {'key': 'user', 'label': 'Account', 'url': url_for('user'), 'active': active['user']},
     ]
@@ -1517,8 +1517,9 @@ def _index_groups_for_field(otype: str, field: str):
     return [(k, groups[k]) for k in keys]
 
 
-@app.route("/index")
-def index():
+@app.route("/review")
+def review():
+    """Review / concordance page (formerly Index)."""
     otype = (request.args.get("type") or "").strip().lower()
     if otype not in TYPE_META:
         otype = next(iter(TYPE_META.keys()))
@@ -1536,13 +1537,20 @@ def index():
 
     return render_template(
         "index.html",
+        page_mode="review",
         otype=otype,
         meta=meta,
         index_fields=index_fields,
         field=field,
         groups=groups,
-        banner_title=make_banner_title("Index", meta["label"]),
+        banner_title=make_banner_title("Review", meta["label"]),
     )
+
+
+@app.route("/index")
+def index():
+    """Backward compatible route; redirect to /review."""
+    return redirect(url_for('review', **request.args))
 
 
 @app.route("/info")

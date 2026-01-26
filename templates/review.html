@@ -1,0 +1,51 @@
+{#
+  Review page body.
+  Rendered inside index.html so it inherits the shared <head>/banner/styles.
+
+  Expected vars (provided by /review route):
+  - otype, meta, index_fields, field, groups, OBJECT_TYPES
+#}
+
+<div class="card">
+  <div class="tabs">
+    {% for key, m in OBJECT_TYPES.items() %}
+      <a class="tab {% if key == otype %}active{% endif %}" href="{{ url_for('review', type=key) }}">{{ m.label }}</a>
+    {% endfor %}
+  </div>
+
+  {% if not index_fields %}
+    <div style="margin-top:12px;" class="meta">
+      No review fields are configured for this object type. Add an
+      <code>index</code> list in <code>config.py</code> (e.g. <code>'index': ['temper','typology']</code>).
+    </div>
+  {% else %}
+    <div class="actions" style="margin-top:10px; flex-wrap:wrap;">
+      {% for f in index_fields %}
+        {% set lbl = meta.field_meta.get(f, {}).get('label') or f %}
+        <a class="btn {% if f == field %}primary{% endif %}" href="{{ url_for('review', type=otype, field=f) }}">{{ lbl }}</a>
+      {% endfor %}
+    </div>
+
+    <div style="margin-top:14px;">
+      {% for val, recs in groups %}
+        <div class="card" style="margin-bottom:12px;">
+          <div style="display:flex; justify-content:space-between; gap:10px; align-items:baseline; flex-wrap:wrap;">
+            <div style="font-weight:800;">{{ val }}</div>
+            <div class="meta">{{ recs|length }} record(s)</div>
+          </div>
+
+          <div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:10px;">
+            {% for r in recs %}
+              <div class="card" style="min-width:260px; flex:1 1 360px;">
+                {% set mode = 'view' %}
+                {% set show_recent_edit_btn = False %}
+                {% set edit_form_id = '' %}
+                {% include "_record_card.html" %}
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+</div>
