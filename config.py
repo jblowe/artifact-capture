@@ -14,6 +14,7 @@ APP_SUBTITLE = ''  # optional, shown smaller in the banner
 APP_LOGO = 'tap-logo-small-v2.png'
 ADMIN_LABEL = 'Admin'  # label used in admin page titles
 DATE_FORMAT = '%Y-%m-%d'  # storage format for DATE fields
+GRID_MAX_WIDTH = 500
 
 BANNER_BG = '#A51931'  # navbar background
 BANNER_FG = '#ffffff'  # navbar text
