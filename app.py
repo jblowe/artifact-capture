@@ -1391,18 +1391,59 @@ def recent():
     if view not in ("para", "table"):
         view = "para"
 
+    # Pagination (Recent)
+    try:
+        page = int(request.args.get("page") or "1")
+    except ValueError:
+        page = 1
+    page = max(page, 1)
+
+    try:
+        per_page = int(request.args.get("per_page") or "25")
+    except ValueError:
+        per_page = 25
+    per_page_choices = [10, 25, 50, 100]
+    if per_page not in per_page_choices:
+        per_page = 25
+
+    offset = (page - 1) * per_page
+
     with get_db() as conn:
+        total = conn.execute(f"SELECT COUNT(*) AS n FROM {otype}").fetchone()["n"]
         rows = conn.execute(
-            f"SELECT * FROM {otype} ORDER BY id DESC LIMIT 100"
+            f"SELECT * FROM {otype} ORDER BY id DESC LIMIT ? OFFSET ?",
+            (per_page, offset),
         ).fetchall()
+
+    start_n = offset + 1 if total and rows else 0
+    end_n = offset + len(rows) if total and rows else 0
+    has_prev = page > 1
+    has_next = (offset + per_page) < total
+
+    def _q(**kw):
+        base = {"type": otype, "view": view, "page": page, "per_page": per_page}
+        base.update(kw)
+        return base
+
     return render_template(
         "recent.html",
         rows=rows,
         otype=otype,
         meta=TYPE_META[otype],
         view=view,
+        page=page,
+        per_page=per_page,
+        per_page_choices=per_page_choices,
+        total=total,
+        start_n=start_n,
+        end_n=end_n,
+        has_prev=has_prev,
+        has_next=has_next,
+        prev_q=_q(page=page - 1),
+        next_q=_q(page=page + 1),
         banner_title=make_banner_title("Recent", TYPE_META[otype]["label"]),
     )
+
 
 
 def _index_groups_for_field(otype: str, field: str):
