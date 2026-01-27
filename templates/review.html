@@ -64,20 +64,41 @@
            href="{{ url_for('review', type=otype, field=field, view='para', page=page, per_page=per_page) }}">paragraph</a>
         <a class="btn {% if view == 'table' %}primary{% endif %}"
            href="{{ url_for('review', type=otype, field=field, view='table', page=page, per_page=per_page) }}">table</a>
-        <a class="btn {% if view == 'grid' %}primary{% endif %}" href="{{ url_for(request.endpoint, type=otype, view='grid', page=page, per_page=per_page) }}">grid</a>
+        <a class="btn {% if view == 'grid' %}primary{% endif %}" href="{{ url_for('review', type=otype, field=field, view='grid', page=page, per_page=per_page) }}">grid</a>
       </div>
     </div>
-
-    {% if view == 'table' %}
+{% if view == 'table' %}
+  {% if groups %}
+    {% for gval, grows in groups %}
+      <h3 style="margin:14px 0 6px 0;">{{ gval }}</h3>
+      {% set table_rows = grows %}
       {% include "_record_table.html" %}
-    {% elif view == 'grid' %}
+    {% endfor %}
+  {% else %}
+    {% include "_record_table.html" %}
+  {% endif %}
+{% elif view == 'grid' %}
+  {% if groups %}
+    {% for gval, grows in groups %}
+      <h3 style="margin:14px 0 6px 0;">{{ gval }}</h3>
       <div class="grid-wrap">
-        {% for r in rows %}
+        {% for r in grows %}
           {% include "_record_grid.html" %}
         {% endfor %}
       </div>
-{% else %}
+    {% endfor %}
+  {% else %}
+    <div class="grid-wrap">
       {% for r in rows %}
+        {% include "_record_grid.html" %}
+      {% endfor %}
+    </div>
+  {% endif %}
+{% else %}
+  {% if groups %}
+    {% for gval, grows in groups %}
+      <h3 style="margin:14px 0 6px 0;">{{ gval }}</h3>
+      {% for r in grows %}
         <div class="card" style="margin-top:12px;">
           {% set mode = 'review' %}
           {% set show_recent_edit_btn = False %}
@@ -85,6 +106,18 @@
           {% include "_record_card.html" %}
         </div>
       {% endfor %}
-    {% endif %}
+    {% endfor %}
+  {% else %}
+    {% for r in rows %}
+      <div class="card" style="margin-top:12px;">
+        {% set mode = 'review' %}
+        {% set show_recent_edit_btn = False %}
+        {% set edit_form_id = '' %}
+        {% include "_record_card.html" %}
+      </div>
+    {% endfor %}
+  {% endif %}
+{% endif %}
+
   {% endif %}
 </div>

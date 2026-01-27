@@ -5,7 +5,7 @@ from flask import (
 from pathlib import Path
 from functools import wraps
 from io import BytesIO
-import sqlite3, time, os, base64, json, ast, re
+import sqlite3, time, os, base64, json, ast, re, collections
 
 from PIL import Image, ImageOps, ExifTags
 
@@ -1590,6 +1590,37 @@ def review():
         has_prev = page > 1
         has_next = (offset + per_page) < total
 
+
+    # Group rows by the selected field value (within the current page) so the Review display
+    # can show headers for each value group without changing pagination semantics.
+    groups = []
+    if field and rows:
+        tmp = collections.defaultdict(list)
+        for r in rows:
+            v = r[field] if field in r.keys() else ""
+            key = ""
+            if v is None:
+                key = ""
+            else:
+                s = str(v).strip()
+                # If this is a JSON list (multi-select), show it as a comma-separated string.
+                if s.startswith("[") and s.endswith("]"):
+                    try:
+                        arr = json.loads(s)
+                        if isinstance(arr, list):
+                            key = ", ".join([str(x) for x in arr if str(x).strip()])
+                        else:
+                            key = s
+                    except Exception:
+                        key = s
+                else:
+                    key = s
+            if not key:
+                key = "(no value)"
+            tmp[key].append(r)
+        for k in sorted(tmp.keys(), key=lambda x: x.lower()):
+            groups.append((k, tmp[k]))
+
     def _q(**kw):
         base = {"type": otype, "field": field, "view": view, "page": page, "per_page": per_page}
         base.update(kw)
@@ -1604,6 +1635,7 @@ def review():
         field=field,
         view=view,
         rows=rows,
+        groups=groups,
         page=page,
         per_page=per_page,
         per_page_choices=per_page_choices,

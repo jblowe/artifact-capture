@@ -1,3 +1,4 @@
+{% set _rows = table_rows if table_rows is defined else rows %}
 {# Shared table renderer for a list of records.
    Expected vars: rows, meta, otype
 #}
@@ -14,7 +15,7 @@
       </tr>
     </thead>
     <tbody>
-      {% for r in rows %}
+      {% for r in _rows %}
         <tr>
           <td class="mono"><strong>{{ r['id'] }}</strong></td>
           {% for col in meta.result_fields %}
