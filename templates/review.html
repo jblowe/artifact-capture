@@ -70,7 +70,7 @@
 {% if view == 'table' %}
   {% if groups %}
     {% for gval, grows in groups %}
-      <h3 style="margin:14px 0 6px 0;">{{ gval }}</h3>
+      <h3 style="margin:14px 0 6px 0;">{{ gval }} <span class="meta">({{ grows|length }})</span></h3>
       {% set table_rows = grows %}
       {% include "_record_table.html" %}
     {% endfor %}
@@ -80,7 +80,7 @@
 {% elif view == 'grid' %}
   {% if groups %}
     {% for gval, grows in groups %}
-      <h3 style="margin:14px 0 6px 0;">{{ gval }}</h3>
+      <h3 style="margin:14px 0 6px 0;">{{ gval }} <span class="meta">({{ grows|length }})</span></h3>
       <div class="grid-wrap">
         {% for r in grows %}
           {% include "_record_grid.html" %}
@@ -97,7 +97,7 @@
 {% else %}
   {% if groups %}
     {% for gval, grows in groups %}
-      <h3 style="margin:14px 0 6px 0;">{{ gval }}</h3>
+      <h3 style="margin:14px 0 6px 0;">{{ gval }} <span class="meta">({{ grows|length }})</span></h3>
       {% for r in grows %}
         <div class="card" style="margin-top:12px;">
           {% set mode = 'review' %}
