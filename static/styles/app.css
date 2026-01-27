@@ -354,12 +354,48 @@ body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;pad
 .kv-table td { padding:4px 6px; vertical-align:top; }
 .kv-table td.label { font-weight:700; white-space:nowrap; }
 
-/* Grid view tiles (sized by --grid-max-width) */
-.grid-wrap { display:flex; flex-wrap:wrap; gap:12px; align-items:flex-start; }
-.grid-tile { flex: 0 1 var(--grid-max-width); max-width: var(--grid-max-width); border:1px solid #ddd; border-radius:6px; padding:10px; background:#fff; box-sizing:border-box; }
-.grid-tile .thumb { width: clamp(60px, calc(var(--grid-max-width) / 7), 110px); height: clamp(60px, calc(var(--grid-max-width) / 7), 110px); object-fit: cover; }
-.grid-placeholder { width: 100%; max-width: var(--grid-max-width); aspect-ratio: 1 / 1; object-fit: contain; border:1px dashed #ccc; border-radius:6px; background:#fafafa; }
-
+/* Grid view (variable-width tiles, max limited by GRID_MAX_WIDTH) */
+.grid-wrap{
+  display:flex;
+  flex-wrap:wrap;
+  gap:12px;
+  margin-top:12px;
+  align-items:flex-start;
+}
+.grid-card{
+  display:inline-block;
+  width: fit-content;
+  max-width: var(--grid-max-width);
+  border:1px solid #ddd;
+  border-radius:6px;
+  padding:8px;
+  background:#fff;
+}
+.grid-images{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  max-width: var(--grid-max-width);
+}
+.grid-card .thumb{
+  width: clamp(80px, calc(var(--grid-max-width)/6), 160px);
+  height: clamp(80px, calc(var(--grid-max-width)/6), 160px);
+  object-fit: cover;
+}
+.grid-placeholder{
+  width: clamp(200px, calc(var(--grid-max-width)*0.6), var(--grid-max-width));
+  height: clamp(160px, calc(var(--grid-max-width)*0.45), 280px);
+  object-fit: contain;
+  border:1px solid #eee;
+  border-radius:4px;
+}
+.grid-text{
+  margin-top:8px;
+  padding-left:1.2em;
+  text-indent:-1.2em;
+  line-height:1.25;
+  max-width: var(--grid-max-width);
+}
 
 /* === Grid view layout (true responsive tiles) === */
 .grid-wrap {
@@ -388,7 +424,7 @@ body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;pad
   object-fit: cover;
 }
 
-/* Grid view */
+/* Grid view (variable-width tiles, max limited by GRID_MAX_WIDTH) */
 .grid-wrap{
   display:flex;
   flex-wrap:wrap;
@@ -397,28 +433,29 @@ body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;pad
   align-items:flex-start;
 }
 .grid-card{
-  flex: 0 1 var(--grid-max-width);
+  display:inline-block;
+  width: fit-content;
   max-width: var(--grid-max-width);
-  width:100%;
   border:1px solid #ddd;
   border-radius:6px;
-  padding:10px;
+  padding:8px;
   background:#fff;
 }
 .grid-images{
   display:flex;
   flex-wrap:wrap;
   gap:6px;
+  max-width: var(--grid-max-width);
 }
 .grid-card .thumb{
-  width: clamp(64px, calc(var(--grid-max-width) / 6), 140px);
-  height: clamp(64px, calc(var(--grid-max-width) / 6), 140px);
-  object-fit:cover;
+  width: clamp(80px, calc(var(--grid-max-width)/6), 160px);
+  height: clamp(80px, calc(var(--grid-max-width)/6), 160px);
+  object-fit: cover;
 }
 .grid-placeholder{
-  width:100%;
-  height: clamp(160px, calc(var(--grid-max-width) * 0.55), 320px);
-  object-fit:contain;
+  width: clamp(200px, calc(var(--grid-max-width)*0.6), var(--grid-max-width));
+  height: clamp(160px, calc(var(--grid-max-width)*0.45), 280px);
+  object-fit: contain;
   border:1px solid #eee;
   border-radius:4px;
 }
@@ -427,4 +464,5 @@ body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;pad
   padding-left:1.2em;
   text-indent:-1.2em;
   line-height:1.25;
+  max-width: var(--grid-max-width);
 }
