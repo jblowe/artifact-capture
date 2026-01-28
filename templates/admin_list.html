@@ -12,7 +12,7 @@
 
   <div class="tabs">
     {% for k, m in OBJECT_TYPES.items() %}
-      <a class="tab {% if k == otype %}active{% endif %}" href="{{ url_for('admin_list', type=k, view=view, per_page=per_page, q=q) }}">{{ m.label }}</a>
+      <a class="tab {% if k == otype %}active{% endif %}" href="{{ url_for('admin_list', type=k, view=view, per_page=per_page, q=q, sort=sort, dir=direction) }}">{{ m.label }}</a>
     {% endfor %}
   </div>
 
@@ -20,6 +20,8 @@
     <form method="get" style="display:flex;gap:.5rem;flex:1 1 auto;align-items:center;flex-wrap:wrap;">
       <input type="hidden" name="type" value="{{ otype }}">
       <input type="hidden" name="view" value="{{ view }}">
+      <input type="hidden" name="sort" value="{{ sort }}">
+      <input type="hidden" name="dir" value="{{ direction }}">
       <input type="hidden" name="page" value="1">
       <input type="search" name="q" placeholder="Search text fields" value="{{ q or '' }}">
       <select name="per_page" onchange="this.form.submit()">
@@ -36,8 +38,8 @@
 
     <div style="display:flex;gap:.4rem;align-items:center;flex:0 0 auto;">
       <span class="small">View:</span>
-      <a class="btn {% if view=='para' %}primary{% endif %}" href="{{ url_for('admin_list', type=otype, q=q, per_page=per_page, page=page, view='para') }}">Paragraph</a>
-      <a class="btn {% if view=='table' %}primary{% endif %}" href="{{ url_for('admin_list', type=otype, q=q, per_page=per_page, page=page, view='table') }}">Table</a>
+      <a class="btn {% if view=='para' %}primary{% endif %}" href="{{ url_for('admin_list', type=otype, q=q, per_page=per_page, page=page, view='para', sort=sort, dir=direction) }}">Paragraph</a>
+      <a class="btn {% if view=='table' %}primary{% endif %}" href="{{ url_for('admin_list', type=otype, q=q, per_page=per_page, page=page, view='table', sort=sort, dir=direction) }}">Table</a>
     </div>
   </div>
 
@@ -51,22 +53,22 @@
       <span class="small">Page {{ page }} of {{ total_pages }}</span>
 
       <a class="btn {% if page <= 1 %}disabled{% endif %}"
-         href="{% if page>1 %}{{ url_for('admin_list', type=otype, q=q, per_page=per_page, page=prev_page, view=view) }}{% else %}#{% endif %}">Prev</a>
+         href="{% if page>1 %}{{ url_for('admin_list', type=otype, q=q, per_page=per_page, page=prev_page, view=view, sort=sort, dir=direction) }}{% else %}#{% endif %}">Prev</a>
 
       <a class="btn {% if page >= total_pages %}disabled{% endif %}"
-         href="{% if page<total_pages %}{{ url_for('admin_list', type=otype, q=q, per_page=per_page, page=next_page, view=view) }}{% else %}#{% endif %}">Next</a>
+         href="{% if page<total_pages %}{{ url_for('admin_list', type=otype, q=q, per_page=per_page, page=next_page, view=view, sort=sort, dir=direction) }}{% else %}#{% endif %}">Next</a>
     </div>
   </div>
 
   {% if view == 'table' %}
     {# Tabular mode: show a column per configured result field. Click headers to sort client-side. #}
-    <table data-sortable="1">
+    <table>
       <thead>
         <tr>
-          <th data-sortkey="id">ID</th>
-          <th data-sortkey="images">Img</th>
+          <th><a href="{{ url_for('admin_list', type=otype, q=q, per_page=per_page, page=1, view=view, sort='id', dir=('asc' if (sort!='id' or direction=='desc') else 'desc')) }}">ID{% if sort=='id' %} {{ "▲" if direction=="asc" else "▼" }}{% endif %}</a></th>
+          <th>Img</th>
           {% for col in meta.result_fields %}
-            <th data-sortkey="{{ col }}">{{ meta.field_meta[col].label }}</th>
+            <th><a href="{{ url_for('admin_list', type=otype, q=q, per_page=per_page, page=1, view=view, sort=col, dir=('asc' if (sort!=col or direction=='desc') else 'desc')) }}">{{ meta.field_meta[col].label }}{% if sort==col %} {{ "▲" if direction=="asc" else "▼" }}{% endif %}</a></th>
           {% endfor %}
           <th data-sortkey="files">Files</th>
           <th>Actions</th>
@@ -89,7 +91,7 @@
                   <img class="thumb" src="{{ url_for('serve_upload', fname=images[-1]) }}" alt="">
                 </a>
               {% endif %}
-              {% if images %}<div class="small">× {{ images|length }}</div>{% endif %}
+              
             </td>
             {% for col in meta.result_fields %}
               {% set fm = meta.field_meta.get(col, {}) %}
@@ -130,11 +132,7 @@
       </tbody>
     </table>
 
-    <div class="small" style="margin-top:.6rem;">
-      Tip: click a column header to sort (client-side).
-    </div>
-
-  {% else %}
+    {% else %}
     {# Paragraph mode: existing compact summary per record (default). #}
     <table>
       <thead>
@@ -170,7 +168,7 @@
             {% elif images %}
               <a href="{{ url_for('serve_upload', fname=images[-1]) }}" target="_blank"><img class="thumb" src="{{ url_for('serve_upload', fname=images[-1]) }}" alt=""></a>
             {% endif %}
-            {% if images %}<div class="small">× {{ images|length }}</div>{% endif %}
+            
           </td>
           <td class="small">
             {% if r['date_updated'] %}<strong>Date recorded:</strong> {{ r['date_updated'] }}<br>{% endif %}

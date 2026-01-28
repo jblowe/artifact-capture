@@ -388,7 +388,7 @@ def inject_globals():
         {'key': 'edit', 'label': 'Edit', 'url': url_for('admin_list', type=ct), 'active': active['edit']},
         {'key': 'review', 'label': 'Review', 'url': url_for('review', type=ct), 'active': active['review']},
         {'key': 'info', 'label': 'Info', 'url': url_for('info'), 'active': active['info']},
-        {'key': 'user', 'label': 'Account', 'url': url_for('user'), 'active': active['user']},
+        # {'key': 'user', 'label': 'Account', 'url': url_for('user'), 'active': active['user']},
     ]
 
     return {
@@ -1703,6 +1703,21 @@ def admin_list():
     if view not in ("para", "table", "grid"):
         view = "para"
 
+    # Sorting (server-side) - applies across all pages.
+    sort = (request.args.get("sort") or "id").strip()
+    direction = (request.args.get("dir") or "desc").strip().lower()
+    if direction not in ("asc", "desc"):
+        direction = "desc"
+
+    # Allowed columns: id + configured result_fields + a few reserved timestamp fields if present.
+    allowed_cols = ["id"] + list(meta.get("result_fields") or [])
+    for extra in ("date_last_saved", "date_updated", "date_recorded"):
+        if extra not in allowed_cols and extra in meta.get("all_cols", allowed_cols):
+            allowed_cols.append(extra)
+
+    if sort not in allowed_cols:
+        sort = "id"
+
     # Pagination
     try:
         page = int(request.args.get("page", "1"))
@@ -1735,7 +1750,7 @@ def admin_list():
         offset = (page - 1) * per_page
 
         rows = conn.execute(
-            f"SELECT * {base_sql} ORDER BY id DESC LIMIT ? OFFSET ?",
+            f"SELECT * {base_sql} ORDER BY {sort} {direction}, id DESC LIMIT ? OFFSET ?",
             params + [per_page, offset],
         ).fetchall()
 
@@ -1744,6 +1759,8 @@ def admin_list():
         rows=rows,
         q=q,
         view=view,
+        sort=sort,
+        direction=direction,
         page=page,
         per_page=per_page,
         total=total,
@@ -1752,7 +1769,6 @@ def admin_list():
         meta=meta,
         banner_title=make_banner_title("Edit", meta["label"]),
     )
-
 
 
 
