@@ -82,12 +82,14 @@ app = Flask(__name__)
 # Grid view sizing (can be overridden in config.py)
 GRID_MAX_WIDTH = int(getattr(config, "GRID_MAX_WIDTH", getattr(config, "grid_max_width", 500)))
 
+
 @app.context_processor
 def inject_ui_globals():
     # Make a few UI globals available to all templates
     return {
         "grid_max_width": GRID_MAX_WIDTH,
     }
+
 
 app.secret_key = APP_SECRET
 
@@ -141,7 +143,6 @@ def _parse_widget(widget_raw: str):
     except Exception:
         print(f"[FATAL] Could not parse widget spec {widget_raw!r} in config.py")
         raise
-
 
 
 # Normalize and validate object_types config.
@@ -212,8 +213,8 @@ for otype, cfg in OBJECT_TYPES.items():
         field_meta[col] = {
             "label": flabel,
             "col": col,
-            "sql_type": sql_type_str,      # for UI decisions
-            "sqlite_type": sqlite_type,    # for schema creation
+            "sql_type": sql_type_str,  # for UI decisions
+            "sqlite_type": sqlite_type,  # for schema creation
             "widget": widget,
             "options": options,
             "constant_value": constant_value,
@@ -221,10 +222,10 @@ for otype, cfg in OBJECT_TYPES.items():
             "required": col in required_fields,
         }
 
-
     # result_rows controls which fields appear (and how they are arranged) in Recent and Edit views.
     # If not provided, we fall back to layout_rows; if still empty, show one field per row.
-    result_rows_effective = result_rows or layout_rows or [[f[1]] for f in input_fields if (len(f) > 1 and f[1] not in SYSTEM_COLUMNS)]
+    result_rows_effective = result_rows or layout_rows or [[f[1]] for f in input_fields if
+                                                           (len(f) > 1 and f[1] not in SYSTEM_COLUMNS)]
     # Allow "system/reserved" columns to be displayed if explicitly referenced in
     # layout_rows/result_rows by adding minimal metadata for them.
     referenced_cols = set()
@@ -238,27 +239,31 @@ for otype, cfg in OBJECT_TYPES.items():
     RESERVED_DEFAULTS = {
         "id": {"label": "ID", "sqlite_type": "INTEGER", "sql_type": "INTEGER", "widget": "readonly", "options": None,
                "constant_value": None, "server_now": False, "required": False},
-        "date_last_saved": {"label": "Date last saved", "sqlite_type": "TEXT", "sql_type": "TIMESTAMP", "widget": "text", "options": None,
+        "date_last_saved": {"label": "Date last saved", "sqlite_type": "TEXT", "sql_type": "TIMESTAMP",
+                            "widget": "text", "options": None,
                             "constant_value": None, "server_now": True, "required": False},
-        "date_recorded": {"label": "Date recorded", "sqlite_type": "TEXT", "sql_type": "TIMESTAMP", "widget": "text", "options": None,
+        "date_recorded": {"label": "Date recorded", "sqlite_type": "TEXT", "sql_type": "TIMESTAMP", "widget": "text",
+                          "options": None,
                           "constant_value": None, "server_now": True, "required": False},
-        "date_updated": {"label": "Date updated", "sqlite_type": "TEXT", "sql_type": "TIMESTAMP", "widget": "text", "options": None,
+        "date_updated": {"label": "Date updated", "sqlite_type": "TEXT", "sql_type": "TIMESTAMP", "widget": "text",
+                         "options": None,
                          "constant_value": None, "server_now": True, "required": False},
         "gps_lat": {"label": "GPS lat", "sqlite_type": "REAL", "sql_type": "FLOAT", "widget": "text", "options": None,
-                   "constant_value": None, "server_now": False, "required": False},
+                    "constant_value": None, "server_now": False, "required": False},
         "gps_lon": {"label": "GPS lon", "sqlite_type": "REAL", "sql_type": "FLOAT", "widget": "text", "options": None,
-                   "constant_value": None, "server_now": False, "required": False},
+                    "constant_value": None, "server_now": False, "required": False},
         "gps_alt": {"label": "GPS alt", "sqlite_type": "REAL", "sql_type": "FLOAT", "widget": "text", "options": None,
-                   "constant_value": None, "server_now": False, "required": False},
+                    "constant_value": None, "server_now": False, "required": False},
         "gps_acc": {"label": "GPS acc", "sqlite_type": "REAL", "sql_type": "FLOAT", "widget": "text", "options": None,
-                   "constant_value": None, "server_now": False, "required": False},
+                    "constant_value": None, "server_now": False, "required": False},
         "images_json": {"label": "Images", "sqlite_type": "TEXT", "sql_type": "TEXT", "widget": "text", "options": None,
                         "constant_value": None, "server_now": False, "required": False},
         "thumbs_json": {"label": "Thumbs", "sqlite_type": "TEXT", "sql_type": "TEXT", "widget": "text", "options": None,
                         "constant_value": None, "server_now": False, "required": False},
         "webps_json": {"label": "WebPs", "sqlite_type": "TEXT", "sql_type": "TEXT", "widget": "text", "options": None,
                        "constant_value": None, "server_now": False, "required": False},
-        "json_files_json": {"label": "JSON files", "sqlite_type": "TEXT", "sql_type": "TEXT", "widget": "text", "options": None,
+        "json_files_json": {"label": "JSON files", "sqlite_type": "TEXT", "sql_type": "TEXT", "widget": "text",
+                            "options": None,
                             "constant_value": None, "server_now": False, "required": False},
     }
 
@@ -405,7 +410,7 @@ def inject_globals():
         'NAV_LINKS': nav_links,
         # Default banner subtitle: current object type (overridden by routes that pass banner_title)
         'banner_title': make_banner_title(ct.capitalize()) if ct else '',
-   }
+    }
 
 
 app.jinja_env.globals["GPS_ENABLED"] = GPS_ENABLED
@@ -682,20 +687,23 @@ def _normalize_date_input(val: str) -> str:
     digits = re.sub(r"\D+", "", v)
     if len(digits) == 8:
         try:
-            mo = int(digits[0:2]); d = int(digits[2:4]); y = int(digits[4:8])
+            mo = int(digits[0:2]);
+            d = int(digits[2:4]);
+            y = int(digits[4:8])
             dt = datetime(y, mo, d)
             return dt.strftime(DATE_FORMAT)
         except Exception:
             pass
     if len(digits) == 6:
         try:
-            mo = int(digits[0:2]); d = int(digits[2:4]); yy = int(digits[4:6])
+            mo = int(digits[0:2]);
+            d = int(digits[2:4]);
+            yy = int(digits[4:6])
             y = (2000 + yy) if yy <= 49 else (1900 + yy)
             dt = datetime(y, mo, d)
             return dt.strftime(DATE_FORMAT)
         except Exception:
             pass
-
 
     # Direct attempts
     for fmt in ("%m/%d/%Y", "%m/%d/%y", "%Y-%m-%d", "%Y/%m/%d", "%Y/%m/%-d", "%Y/%-m/%d", "%Y/%-m/%-d"):
@@ -756,12 +764,12 @@ def _normalize_timestamp_input(val: str) -> str:
 
     # Common canonical forms
     for fmt in (
-        "%Y-%m-%dT%H:%M:%S",
-        "%Y-%m-%dT%H:%M",
-        "%Y-%m-%d %H:%M:%S",
-        "%Y-%m-%d %H:%M",
-        "%m/%d/%Y %H:%M:%S",
-        "%m/%d/%Y %H:%M",
+            "%Y-%m-%dT%H:%M:%S",
+            "%Y-%m-%dT%H:%M",
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%d %H:%M",
+            "%m/%d/%Y %H:%M:%S",
+            "%m/%d/%Y %H:%M",
     ):
         try:
             dt = datetime.strptime(v, fmt)
@@ -791,6 +799,7 @@ def _normalize_timestamp_input(val: str) -> str:
             return v
 
     return v
+
 
 def _safe_format_filename(fmt: str, meta_values: dict, record_id: int) -> str:
     """Safely render a filename using a Python format string.
@@ -835,6 +844,7 @@ def maps_links(lat, lon):
 app.jinja_env.globals["maps_links"] = maps_links
 app.jinja_env.filters["fromjson"] = lambda s: json.loads(s) if s else []
 
+
 @app.route("/favicon.ico")
 def favicon():
     return send_from_directory(
@@ -842,6 +852,7 @@ def favicon():
         "favicon.ico",
         mimetype="image/vnd.microsoft.icon",
     )
+
 
 @app.route("/", methods=["GET"])
 def form():
@@ -867,8 +878,6 @@ def form():
                            banner_title=make_banner_title(selected.capitalize()),
                            prefill_by_type=prefill_by_type,
                            current_record_by_type=session.get('current_record_by_type', {}))
-
-
 
 
 def _apply_postprocess_values(otype: str, values: dict) -> dict:
@@ -897,6 +906,7 @@ def _apply_postprocess_values(otype: str, values: dict) -> dict:
     for k in allowed:
         cleaned[k] = out.get(k)
     return cleaned
+
 
 @app.route("/exists", methods=["POST"])
 def exists():
@@ -933,7 +943,6 @@ def exists():
         # Server-managed timestamp/date (e.g., date_last_saved)
 
         if fm.get('server_now'):
-
             from datetime import datetime
 
             now = datetime.now()
@@ -941,7 +950,6 @@ def exists():
             meta_values[col] = now.strftime(DATE_FORMAT) if t == 'DATE' else now.strftime(TIMESTAMP_FORMAT)
 
             continue
-
 
         raw = (request.form.get(col) or "").strip()
         if fm.get("widget") == "uppercase" and raw:
@@ -951,12 +959,16 @@ def exists():
             meta_values[col] = None
             continue
 
-        if t.startswith("INT"): 
-            try: meta_values[col] = int(raw)
-            except ValueError: meta_values[col] = None
-        elif t.startswith("FLOAT") or t.startswith("REAL") or t.startswith("DOUBLE"): 
-            try: meta_values[col] = float(raw)
-            except ValueError: meta_values[col] = None
+        if t.startswith("INT"):
+            try:
+                meta_values[col] = int(raw)
+            except ValueError:
+                meta_values[col] = None
+        elif t.startswith("FLOAT") or t.startswith("REAL") or t.startswith("DOUBLE"):
+            try:
+                meta_values[col] = float(raw)
+            except ValueError:
+                meta_values[col] = None
         elif t == "DATE":
             meta_values[col] = _normalize_date_input(raw)
         elif t == "TIMESTAMP":
@@ -998,6 +1010,7 @@ def exists():
         return jsonify({"exists": True, "id": int(row["id"])})
     return jsonify({"exists": False, "id": None})
 
+
 @app.route("/submit", methods=["POST"])
 def submit():
     otype = (request.form.get("object_type") or "").strip().lower()
@@ -1037,7 +1050,6 @@ def submit():
         # Server-managed timestamp/date (e.g., date_last_saved)
 
         if fm.get('server_now'):
-
             from datetime import datetime
 
             now = datetime.now()
@@ -1045,7 +1057,6 @@ def submit():
             meta_values[col] = now.strftime(DATE_FORMAT) if t == 'DATE' else now.strftime(TIMESTAMP_FORMAT)
 
             continue
-
 
         raw = (request.form.get(col) or "").strip()
         if fm.get("widget") == "uppercase" and raw:
@@ -1128,20 +1139,30 @@ def submit():
                     flash('No current record to update. Click New Record first.')
                     return redirect(url_for('form', type=otype))
 
-                sets = ",".join([f"{c}=?" for c in meta_cols] + ["meta_signature=?", "timestamp=?", "date_last_saved=?"] + (["date_updated=?"] if meta.get('field_meta', {}).get('date_updated', {}).get('server_now') else []))
-                vals = [meta_values.get(c) for c in meta_cols] + [meta_signature, ts, now.strftime(TIMESTAMP_FORMAT)] + ([now.strftime(TIMESTAMP_FORMAT)] if meta.get('field_meta', {}).get('date_updated', {}).get('server_now') else [])
+                sets = ",".join(
+                    [f"{c}=?" for c in meta_cols] + ["meta_signature=?", "timestamp=?", "date_last_saved=?"] + (
+                        ["date_updated=?"] if meta.get('field_meta', {}).get('date_updated', {}).get(
+                            'server_now') else []))
+                vals = [meta_values.get(c) for c in meta_cols] + [meta_signature, ts,
+                                                                  now.strftime(TIMESTAMP_FORMAT)] + (
+                           [now.strftime(TIMESTAMP_FORMAT)] if meta.get('field_meta', {}).get('date_updated', {}).get(
+                               'server_now') else [])
                 conn.execute(f"UPDATE {otype} SET {sets} WHERE id=?", vals + [rid])
                 flash(f"Record {rid} updated.")
                 return redirect(url_for('form', type=otype, last_id=rid, last_type=otype))
 
             # Default (and 'new_record'): always insert a fresh row
-            db_cols = meta_cols + ["meta_signature", "images_json", "thumbs_json", "webps_json", "json_files_json", "timestamp", "date_last_saved"] + (["date_updated"] if meta.get('field_meta', {}).get('date_updated', {}).get('server_now') else [])
+            db_cols = meta_cols + ["meta_signature", "images_json", "thumbs_json", "webps_json", "json_files_json",
+                                   "timestamp", "date_last_saved"] + (
+                          ["date_updated"] if meta.get('field_meta', {}).get('date_updated', {}).get(
+                              'server_now') else [])
             vals = [meta_values.get(c) for c in meta_cols] + [
                 meta_signature,
                 json.dumps([]), json.dumps([]), json.dumps([]), json.dumps([]),
                 ts,
                 now.strftime(TIMESTAMP_FORMAT),
-            ] + ([now.strftime(TIMESTAMP_FORMAT)] if meta.get('field_meta', {}).get('date_updated', {}).get('server_now') else [])
+            ] + ([now.strftime(TIMESTAMP_FORMAT)] if meta.get('field_meta', {}).get('date_updated', {}).get(
+                'server_now') else [])
             placeholders = ",".join(["?"] * len(db_cols))
             cur = conn.execute(f"INSERT INTO {otype} ({','.join(db_cols)}) VALUES ({placeholders})", vals)
             rid = int(cur.lastrowid)
@@ -1227,7 +1248,6 @@ def submit():
                 (meta_signature,),
             ).fetchone()
 
-
         if row:
             record_id = int(row["id"])
             images = _load_list(row["images_json"])
@@ -1258,7 +1278,6 @@ def submit():
             )
             record_id = cur.lastrowid
             images, thumbs, webps, jfiles = [], [], [], []
-
 
         # Remember / update current record for this object type
         try:
@@ -1464,7 +1483,6 @@ def recent():
     )
 
 
-
 def _index_groups_for_field(otype: str, field: str):
     """Return grouped records for Index view.
 
@@ -1590,7 +1608,6 @@ def review():
         has_prev = page > 1
         has_next = (offset + per_page) < total
 
-
     # Group rows by the selected field value (within the current page) so the Review display
     # can show headers for each value group without changing pagination semantics.
     groups = []
@@ -1671,8 +1688,6 @@ def info():
         values=[],
         groupings={},
     )
-
-
 
 
 @app.route("/user")
@@ -1771,7 +1786,6 @@ def admin_list():
     )
 
 
-
 @app.post("/admin/<otype>/<int:aid>/add_image")
 @requires_admin
 def admin_add_image(otype, aid):
@@ -1812,7 +1826,7 @@ def admin_add_image(otype, aid):
 
         images = _load_list(row.get('images_json'))
         thumbs = _load_list(row.get('thumbs_json'))
-        webps  = _load_list(row.get('webps_json'))
+        webps = _load_list(row.get('webps_json'))
         jfiles = _load_list(row.get('json_files_json'))
 
         # Use existing record metadata values for filename formatting.
@@ -1913,6 +1927,7 @@ def admin_add_image(otype, aid):
     flash(f"Added image to record {aid}.")
     return redirect(url_for('admin_edit', otype=otype, aid=aid))
 
+
 @app.post('/admin/<otype>/<int:aid>/delete_image/<int:img_idx>')
 @requires_admin
 def admin_delete_image(otype, aid, img_idx):
@@ -1954,7 +1969,7 @@ def admin_delete_image(otype, aid, img_idx):
 
         images = _load_list(row.get('images_json'))
         thumbs = _load_list(row.get('thumbs_json'))
-        webps  = _load_list(row.get('webps_json'))
+        webps = _load_list(row.get('webps_json'))
         jfiles = _load_list(row.get('json_files_json'))
 
         # img_idx is 0-based index from the template
@@ -1995,6 +2010,8 @@ def admin_delete_image(otype, aid, img_idx):
 
     flash('Deleted image.')
     return redirect(url_for('admin_edit', otype=otype, aid=aid))
+
+
 @app.route("/admin/edit/<otype>/<int:aid>", methods=["GET", "POST"])
 @requires_admin
 def admin_edit(otype, aid):
@@ -2311,9 +2328,6 @@ def admin_map():
         meta=TYPE_META[otype],
         banner_title=make_banner_title("Edit", "Map", TYPE_META[otype]["label"]),
     )
-
-
-
 
 
 if __name__ == "__main__":
