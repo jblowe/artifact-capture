@@ -46,7 +46,8 @@
         {% endif %}
       </div>
 
-      <form method="get" action="{{ url_for('review') }}" style="display:inline-flex; align-items:center; gap:6px; margin:0;">
+      <form method="get" action="{{ url_for('review') }}"
+            style="display:inline-flex; align-items:center; gap:6px; margin:0;">
         <input type="hidden" name="type" value="{{ otype }}">
         <input type="hidden" name="field" value="{{ field }}">
         <input type="hidden" name="view" value="{{ view }}">
@@ -64,60 +65,61 @@
            href="{{ url_for('review', type=otype, field=field, view='para', page=page, per_page=per_page) }}">paragraph</a>
         <a class="btn {% if view == 'table' %}primary{% endif %}"
            href="{{ url_for('review', type=otype, field=field, view='table', page=page, per_page=per_page) }}">table</a>
-        <a class="btn {% if view == 'grid' %}primary{% endif %}" href="{{ url_for('review', type=otype, field=field, view='grid', page=page, per_page=per_page) }}">grid</a>
+        <a class="btn {% if view == 'grid' %}primary{% endif %}"
+           href="{{ url_for('review', type=otype, field=field, view='grid', page=page, per_page=per_page) }}">grid</a>
       </div>
     </div>
-{% if view == 'table' %}
-  {% if groups %}
-    {% for gval, grows in groups %}
-      <h3 style="margin:14px 0 6px 0;">{{ gval }} <span class="meta">({{ grows|length }})</span></h3>
-      {% set table_rows = grows %}
-      {% include "_record_table.html" %}
-    {% endfor %}
-  {% else %}
-    {% include "_record_table.html" %}
-  {% endif %}
-{% elif view == 'grid' %}
-  {% if groups %}
-    {% for gval, grows in groups %}
-      <h3 style="margin:14px 0 6px 0;">{{ gval }} <span class="meta">({{ grows|length }})</span></h3>
-      <div class="grid-wrap">
-        {% for r in grows %}
-          {% include "_record_grid.html" %}
+    {% if view == 'table' %}
+      {% if groups %}
+        {% for gval, grows in groups %}
+          <h3 style="margin:14px 0 6px 0;">{{ gval }} <span class="meta">({{ grows|length }})</span></h3>
+          {% set table_rows = grows %}
+          {% include "_record_table.html" %}
         {% endfor %}
-      </div>
-    {% endfor %}
-  {% else %}
-    <div class="grid-wrap">
-      {% for r in rows %}
-        {% include "_record_grid.html" %}
-      {% endfor %}
-    </div>
-  {% endif %}
-{% else %}
-  {% if groups %}
-    {% for gval, grows in groups %}
-      <h3 style="margin:14px 0 6px 0;">{{ gval }} <span class="meta">({{ grows|length }})</span></h3>
-      {% for r in grows %}
-        <div class="card" style="margin-top:12px;">
-          {% set mode = 'review' %}
-          {% set show_recent_edit_btn = False %}
-          {% set edit_form_id = '' %}
-          {% include "_record_card.html" %}
+      {% else %}
+        {% include "_record_table.html" %}
+      {% endif %}
+    {% elif view == 'grid' %}
+      {% if groups %}
+        {% for gval, grows in groups %}
+          <h3 style="margin:14px 0 6px 0;">{{ gval }} <span class="meta">({{ grows|length }})</span></h3>
+          <div class="grid-wrap">
+            {% for r in grows %}
+              {% include "_record_grid.html" %}
+            {% endfor %}
+          </div>
+        {% endfor %}
+      {% else %}
+        <div class="grid-wrap">
+          {% for r in rows %}
+            {% include "_record_grid.html" %}
+          {% endfor %}
         </div>
-      {% endfor %}
-    {% endfor %}
-  {% else %}
-    {% for r in rows %}
-      <div class="card" style="margin-top:12px;">
-        {% set mode = 'review' %}
-        {% set show_recent_edit_btn = False %}
-        {% set edit_form_id = '' %}
-        {% include "_record_card.html" %}
-      </div>
-    {% endfor %}
-  {% endif %}
-{% endif %}
+      {% endif %}
+    {% else %}
+      {% if groups %}
+        {% for gval, grows in groups %}
+          <h3 style="margin:14px 0 6px 0;">{{ gval }} <span class="meta">({{ grows|length }})</span></h3>
+          {% for r in grows %}
+            <div class="card" style="margin-top:12px;">
+              {% set mode = 'review' %}
+              {% set show_recent_edit_btn = False %}
+              {% set edit_form_id = '' %}
+              {% include "_record_card.html" %}
+            </div>
+          {% endfor %}
+        {% endfor %}
+      {% else %}
+        {% for r in rows %}
+          <div class="card" style="margin-top:12px;">
+            {% set mode = 'review' %}
+            {% set show_recent_edit_btn = False %}
+            {% set edit_form_id = '' %}
+            {% include "_record_card.html" %}
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endif %}
 
   {% endif %}
 </div>

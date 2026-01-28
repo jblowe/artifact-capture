@@ -4,7 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="{{ url_for('static', filename='styles/app.css') }}">
-  <style>:root{--grid-max-width: {{ grid_max_width }}px;}</style>
+  <style>:root {
+      --grid-max-width: {{ grid_max_width }}px;
+  }</style>
   <script defer src="{{ url_for('static', filename='js/app.js') }}"></script>
   <title>Edit {{ meta.label }} {{ r['id'] }}</title>
 </head>
@@ -15,7 +17,8 @@
   {% with messages = get_flashed_messages() %}
     {% if messages %}
       <div class="flash">
-        {% for m in messages %}<div>{{ m }}</div>{% endfor %}
+        {% for m in messages %}
+          <div>{{ m }}</div>{% endfor %}
       </div>
     {% endif %}
   {% endwith %}

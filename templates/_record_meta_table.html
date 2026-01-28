@@ -71,7 +71,8 @@
                       <div class="radio-group">
                         {% for opt in options %}
                           <label class="check-item">
-                            <input type="checkbox" name="{{ col }}" value="{{ opt }}" {% if opt in selected %}checked{% endif %}> {{ opt }}
+                            <input type="checkbox" name="{{ col }}" value="{{ opt }}"
+                                   {% if opt in selected %}checked{% endif %}> {{ opt }}
                           </label>
                         {% endfor %}
                       </div>
@@ -90,7 +91,8 @@
                       {% elif col in ['notes','description'] %}
                         <textarea name="{{ col }}" rows="3">{{ vv }}</textarea>
                       {% else %}
-                        <input type="text" name="{{ col }}" value="{{ vv }}"{% if widget == "uppercase" %} style="text-transform: uppercase;" autocapitalize="characters"{% endif %}>
+                        <input type="text" name="{{ col }}" value="{{ vv }}"{% if widget == "uppercase" %}
+                               style="text-transform: uppercase;" autocapitalize="characters"{% endif %}>
                       {% endif %}
                     {% endif %}
                   {% else %}
@@ -130,7 +132,8 @@
                     <div class="radio-group">
                       {% for opt in options %}
                         <label class="check-item">
-                          <input type="checkbox" name="{{ col }}" value="{{ opt }}" {% if opt in selected %}checked{% endif %}> {{ opt }}
+                          <input type="checkbox" name="{{ col }}" value="{{ opt }}"
+                                 {% if opt in selected %}checked{% endif %}> {{ opt }}
                         </label>
                       {% endfor %}
                     </div>
@@ -149,7 +152,8 @@
                     {% elif col in ['notes','description'] %}
                       <textarea name="{{ col }}" rows="3">{{ vv }}</textarea>
                     {% else %}
-                      <input type="text" name="{{ col }}" value="{{ vv }}"{% if widget == "uppercase" %} style="text-transform: uppercase;" autocapitalize="characters"{% endif %}>
+                      <input type="text" name="{{ col }}" value="{{ vv }}"{% if widget == "uppercase" %}
+                             style="text-transform: uppercase;" autocapitalize="characters"{% endif %}>
                     {% endif %}
                   {% endif %}
                 {% else %}

@@ -2,33 +2,33 @@
 <html lang="en">
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  
-<link rel="stylesheet" href="{{ url_for('static', filename='styles/app.css') }}">
-<script defer src="{{ url_for('static', filename='js/app.js') }}"></script>
-<title>{{ meta.label }} Map</title>
-  
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles/app.css') }}">
+  <script defer src="{{ url_for('static', filename='js/app.js') }}"></script>
+  <title>{{ meta.label }} Map</title>
+
   <link rel="stylesheet" href="{{ url_for('static', filename='leaflet/leaflet.css') }}">
   <script src="{{ url_for('static', filename='leaflet/leaflet.js') }}"></script>
 </head>
 <body>
 {% include "_banner.html" %}
-  <div class="tabs">
-    {% for k, m in OBJECT_TYPES.items() %}
-      <a class="tab {% if k == otype %}active{% endif %}" href="{{ url_for('admin_map', type=k) }}">{{ m.label }}</a>
-    {% endfor %}
-  </div>
+<div class="tabs">
+  {% for k, m in OBJECT_TYPES.items() %}
+    <a class="tab {% if k == otype %}active{% endif %}" href="{{ url_for('admin_map', type=k) }}">{{ m.label }}</a>
+  {% endfor %}
+</div>
 
-  <div id="topbar">
-    <span>{{ meta.label }} map (GPS-enabled records)</span>
-  </div>
+<div id="topbar">
+  <span>{{ meta.label }} map (GPS-enabled records)</span>
+</div>
 
-  <div id="mapStatus">
-    Basemap or map library could not be loaded. You may be offline or Leaflet may be missing.
-  </div>
+<div id="mapStatus">
+  Basemap or map library could not be loaded. You may be offline or Leaflet may be missing.
+</div>
 
-  <div id="map-status" class="small" style="display:none"></div>
-  <div id="map" data-geojson-url="{{ url_for('admin_export_geojson', type=otype) }}"></div>
+<div id="map-status" class="small" style="display:none"></div>
+<div id="map" data-geojson-url="{{ url_for('admin_export_geojson', type=otype) }}"></div>
 
-  
+
 </body>
 </html>

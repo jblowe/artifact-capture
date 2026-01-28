@@ -5,38 +5,38 @@
 <div style="overflow:auto; margin-top:10px;">
   <table class="grid-table">
     <thead>
-      <tr>
-        <th>ID</th>
-        {% for col in meta.result_fields %}
-          {% set fm = meta.field_meta.get(col, {}) %}
-          <th>{{ fm.get('label') or col }}</th>
-        {% endfor %}
-        <th>Updated</th>
-      </tr>
+    <tr>
+      <th>ID</th>
+      {% for col in meta.result_fields %}
+        {% set fm = meta.field_meta.get(col, {}) %}
+        <th>{{ fm.get('label') or col }}</th>
+      {% endfor %}
+      <th>Updated</th>
+    </tr>
     </thead>
     <tbody>
-      {% for r in _rows %}
-        <tr>
-          <td class="mono"><strong>{{ r['id'] }}</strong></td>
-          {% for col in meta.result_fields %}
-            {% set fm = meta.field_meta.get(col, {}) %}
-            {% set v = r[col] if r[col] is not none else '' %}
-            <td>
-              {% if fm.get('widget') == 'radio' and v %}
-                {% set selected = (v|fromjson) %}
-                {{ selected|join(', ') }}
-              {% else %}
-                {{ v }}
-              {% endif %}
-            </td>
-          {% endfor %}
-          <td class="mono">
-            {% if 'date_last_saved' in r.keys() and r['date_last_saved'] %}{{ r['date_last_saved'] }}
-            {% elif 'date_updated' in r.keys() and r['date_updated'] %}{{ r['date_updated'] }}
+    {% for r in _rows %}
+      <tr>
+        <td class="mono"><strong>{{ r['id'] }}</strong></td>
+        {% for col in meta.result_fields %}
+          {% set fm = meta.field_meta.get(col, {}) %}
+          {% set v = r[col] if r[col] is not none else '' %}
+          <td>
+            {% if fm.get('widget') == 'radio' and v %}
+              {% set selected = (v|fromjson) %}
+              {{ selected|join(', ') }}
+            {% else %}
+              {{ v }}
             {% endif %}
           </td>
-        </tr>
-      {% endfor %}
+        {% endfor %}
+        <td class="mono">
+          {% if 'date_last_saved' in r.keys() and r['date_last_saved'] %}{{ r['date_last_saved'] }}
+            {% elif 'date_updated' in r.keys() and r['date_updated'] %}{{ r['date_updated'] }}
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
     </tbody>
   </table>
 </div>

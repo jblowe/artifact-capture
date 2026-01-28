@@ -1,8 +1,8 @@
 {# Shared navbar/banner. Variables are injected by app.py. #}
 <header class="app-banner"
         style="--banner-bg: {{ BANNER_BG }};
-               --banner-fg: {{ BANNER_FG }};
-               --banner-accent: {{ BANNER_ACCENT }};">
+                --banner-fg: {{ BANNER_FG }};
+                --banner-accent: {{ BANNER_ACCENT }};">
   <div class="banner-inner">
 
     <!-- LEFT: Logo + Brand + Subtitle -->
@@ -20,9 +20,9 @@
       </div>
 
       <div class="page-title">
-          {% if banner_title %}
-            <div class="brand-subtitle">{{ banner_title }}</div>
-          {% endif %}
+        {% if banner_title %}
+          <div class="brand-subtitle">{{ banner_title }}</div>
+        {% endif %}
       </div>
     </div>
 

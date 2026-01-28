@@ -1,16 +1,53 @@
 {% include "_banner.html" %}
 <style>
-  .lang-tabs { display:flex; gap:8px; flex-wrap:wrap; margin: 12px 0; }
-  .lang-panel { display:none; }
-  .lang-panel.active { display:block; }
-  .doc-wrap :is(p,li) { line-height: 1.35; }
+    .lang-tabs {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin: 12px 0;
+    }
 
-  code { background: #f3f4f6; padding: 0.1rem 0.25rem; border-radius: 4px; }
-  pre code { display: block; padding: 1rem; overflow-x: auto; }
-  h1, h2, h3 { margin-top: 1.6rem; }
-  ul, ol { padding-left: 1.4rem; }
-  a { color: inherit; }
-  hr { border: 0; border-top: 1px solid #e5e7eb; margin: 2rem 0; }
+    .lang-panel {
+        display: none;
+    }
+
+    .lang-panel.active {
+        display: block;
+    }
+
+    .doc-wrap :is(p,li) {
+        line-height: 1.35;
+    }
+
+    code {
+        background: #f3f4f6;
+        padding: 0.1rem 0.25rem;
+        border-radius: 4px;
+    }
+
+    pre code {
+        display: block;
+        padding: 1rem;
+        overflow-x: auto;
+    }
+
+    h1, h2, h3 {
+        margin-top: 1.6rem;
+    }
+
+    ul, ol {
+        padding-left: 1.4rem;
+    }
+
+    a {
+        color: inherit;
+    }
+
+    hr {
+        border: 0;
+        border-top: 1px solid #e5e7eb;
+        margin: 2rem 0;
+    }
 </style>
 
 <div class="page">
@@ -35,30 +72,38 @@
 </div>
 
 <script>
-  function switchLang(lang) {
-    const thBtn = document.getElementById('tab-th');
-    const enBtn = document.getElementById('tab-en');
-    const thPanel = document.getElementById('panel-th');
-    const enPanel = document.getElementById('panel-en');
+    function switchLang(lang) {
+        const thBtn = document.getElementById('tab-th');
+        const enBtn = document.getElementById('tab-en');
+        const thPanel = document.getElementById('panel-th');
+        const enPanel = document.getElementById('panel-en');
 
-    if (lang === 'en') {
-      thBtn.classList.remove('primary');
-      enBtn.classList.add('primary');
-      thPanel.classList.remove('active');
-      enPanel.classList.add('active');
-      try { localStorage.setItem('info_lang', 'en'); } catch(e) {}
-    } else {
-      enBtn.classList.remove('primary');
-      thBtn.classList.add('primary');
-      enPanel.classList.remove('active');
-      thPanel.classList.add('active');
-      try { localStorage.setItem('info_lang', 'th'); } catch(e) {}
+        if (lang === 'en') {
+            thBtn.classList.remove('primary');
+            enBtn.classList.add('primary');
+            thPanel.classList.remove('active');
+            enPanel.classList.add('active');
+            try {
+                localStorage.setItem('info_lang', 'en');
+            } catch (e) {
+            }
+        } else {
+            enBtn.classList.remove('primary');
+            thBtn.classList.add('primary');
+            enPanel.classList.remove('active');
+            thPanel.classList.add('active');
+            try {
+                localStorage.setItem('info_lang', 'th');
+            } catch (e) {
+            }
+        }
     }
-  }
-  (function(){
-    try {
-      const pref = localStorage.getItem('info_lang');
-      if (pref === 'en') switchLang('en');
-    } catch(e) {}
-  })();
+
+    (function () {
+        try {
+            const pref = localStorage.getItem('info_lang');
+            if (pref === 'en') switchLang('en');
+        } catch (e) {
+        }
+    })();
 </script>

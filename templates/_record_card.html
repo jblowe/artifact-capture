@@ -20,7 +20,8 @@
   {% endif %}
 
   <div style="flex:1 1 420px; min-width:280px;">
-    {% if show_id_header %}<div style="font-weight:800; margin-bottom:8px;"><strong>{{ r['id'] }}</strong></div>{% endif %}
+    {% if show_id_header %}
+      <div style="font-weight:800; margin-bottom:8px;"><strong>{{ r['id'] }}</strong></div>{% endif %}
 
     {% if mode == 'edit' %}
       <form id="{{ edit_form_id }}" method="post" action="{{ url_for('admin_edit', otype=otype, aid=r['id']) }}">
@@ -56,7 +57,8 @@
       <div style="display:flex; flex-direction:column; gap:10px;">
         <button class="btn primary" type="submit" form="{{ edit_form_id }}">Save</button>
 
-        <form method="post" action="{{ url_for('admin_add_image', otype=otype, aid=r['id']) }}" enctype="multipart/form-data" style="margin:0;">
+        <form method="post" action="{{ url_for('admin_add_image', otype=otype, aid=r['id']) }}"
+              enctype="multipart/form-data" style="margin:0;">
           <label class="meta" style="display:block; margin-bottom:4px;">Add image</label>
           <input type="file" name="photo" accept="image/*" style="margin-bottom:6px;">
           <button class="btn" type="submit">Add Image</button>

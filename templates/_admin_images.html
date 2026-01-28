@@ -12,9 +12,15 @@
           <img class="thumb" src="{{ url_for('serve_upload', fname=t) }}" alt="thumb">
         </a>
         {% if allow_delete %}
-          <form method="post" action="{{ url_for('admin_delete_image', otype=otype, aid=r['id'], img_idx=i) }}" style="position:absolute; top:2px; right:2px;">
-            <button class="btn danger icon-btn" type="submit" aria-label="Delete image" title="Delete image" onclick="return confirm('Delete this image?');">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M5.5 5.5A.5.5 0 0 1 6 6v7a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5.5a.5.5 0 0 1 .5-.5h.5a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0V6a.5.5 0 0 1-.5-.5z"/><path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1z"/></svg>
+          <form method="post" action="{{ url_for('admin_delete_image', otype=otype, aid=r['id'], img_idx=i) }}"
+                style="position:absolute; top:2px; right:2px;">
+            <button class="btn danger icon-btn" type="submit" aria-label="Delete image" title="Delete image"
+                    onclick="return confirm('Delete this image?');">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16" fill="currentColor"
+                   aria-hidden="true">
+                <path d="M5.5 5.5A.5.5 0 0 1 6 6v7a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5.5a.5.5 0 0 1 .5-.5h.5a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0V6a.5.5 0 0 1-.5-.5z"/>
+                <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1z"/>
+              </svg>
             </button>
           </form>
         {% endif %}
@@ -30,9 +36,15 @@
           <img class="thumb" src="{{ url_for('serve_upload', fname=img) }}" alt="image">
         </a>
         {% if allow_delete %}
-          <form method="post" action="{{ url_for('admin_delete_image', otype=otype, aid=r['id'], img_idx=i) }}" style="position:absolute; top:2px; right:2px;">
-            <button class="btn danger icon-btn" type="submit" aria-label="Delete image" title="Delete image" onclick="return confirm('Delete this image?');">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M5.5 5.5A.5.5 0 0 1 6 6v7a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5.5a.5.5 0 0 1 .5-.5h.5a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0V6a.5.5 0 0 1-.5-.5z"/><path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1z"/></svg>
+          <form method="post" action="{{ url_for('admin_delete_image', otype=otype, aid=r['id'], img_idx=i) }}"
+                style="position:absolute; top:2px; right:2px;">
+            <button class="btn danger icon-btn" type="submit" aria-label="Delete image" title="Delete image"
+                    onclick="return confirm('Delete this image?');">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16" fill="currentColor"
+                   aria-hidden="true">
+                <path d="M5.5 5.5A.5.5 0 0 1 6 6v7a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5.5a.5.5 0 0 1 .5-.5h.5a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0V6a.5.5 0 0 1-.5-.5z"/>
+                <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1z"/>
+              </svg>
             </button>
           </form>
         {% endif %}

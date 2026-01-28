@@ -12,7 +12,8 @@
 
   <div class="tabs">
     {% for k, m in OBJECT_TYPES.items() %}
-      <a class="tab {% if k == otype %}active{% endif %}" href="{{ url_for('admin_list', type=k, view=view, per_page=per_page, q=q, sort=sort, dir=direction) }}">{{ m.label }}</a>
+      <a class="tab {% if k == otype %}active{% endif %}"
+         href="{{ url_for('admin_list', type=k, view=view, per_page=per_page, q=q, sort=sort, dir=direction) }}">{{ m.label }}</a>
     {% endfor %}
   </div>
 
@@ -38,8 +39,10 @@
 
     <div style="display:flex;gap:.4rem;align-items:center;flex:0 0 auto;">
       <span class="small">View:</span>
-      <a class="btn {% if view=='para' %}primary{% endif %}" href="{{ url_for('admin_list', type=otype, q=q, per_page=per_page, page=page, view='para', sort=sort, dir=direction) }}">Paragraph</a>
-      <a class="btn {% if view=='table' %}primary{% endif %}" href="{{ url_for('admin_list', type=otype, q=q, per_page=per_page, page=page, view='table', sort=sort, dir=direction) }}">Table</a>
+      <a class="btn {% if view=='para' %}primary{% endif %}"
+         href="{{ url_for('admin_list', type=otype, q=q, per_page=per_page, page=page, view='para', sort=sort, dir=direction) }}">Paragraph</a>
+      <a class="btn {% if view=='table' %}primary{% endif %}"
+         href="{{ url_for('admin_list', type=otype, q=q, per_page=per_page, page=page, view='table', sort=sort, dir=direction) }}">Table</a>
     </div>
   </div>
 
@@ -53,10 +56,16 @@
       <span class="small">Page {{ page }} of {{ total_pages }}</span>
 
       <a class="btn {% if page <= 1 %}disabled{% endif %}"
-         href="{% if page>1 %}{{ url_for('admin_list', type=otype, q=q, per_page=per_page, page=prev_page, view=view, sort=sort, dir=direction) }}{% else %}#{% endif %}">Prev</a>
+         href="
+
+
+                 {% if page>1 %}{{ url_for('admin_list', type=otype, q=q, per_page=per_page, page=prev_page, view=view, sort=sort, dir=direction) }}{% else %}#{% endif %}">Prev</a>
 
       <a class="btn {% if page >= total_pages %}disabled{% endif %}"
-         href="{% if page<total_pages %}{{ url_for('admin_list', type=otype, q=q, per_page=per_page, page=next_page, view=view, sort=sort, dir=direction) }}{% else %}#{% endif %}">Next</a>
+         href="
+
+
+                 {% if page<total_pages %}{{ url_for('admin_list', type=otype, q=q, per_page=per_page, page=next_page, view=view, sort=sort, dir=direction) }}{% else %}#{% endif %}">Next</a>
     </div>
   </div>
 
@@ -64,86 +73,106 @@
     {# Tabular mode: show a column per configured result field. Click headers to sort client-side. #}
     <table>
       <thead>
-        <tr>
-          <th><a href="{{ url_for('admin_list', type=otype, q=q, per_page=per_page, page=1, view=view, sort='id', dir=('asc' if (sort!='id' or direction=='desc') else 'desc')) }}">ID{% if sort=='id' %} {{ "▲" if direction=="asc" else "▼" }}{% endif %}</a></th>
-          <th>Img</th>
-          {% for col in meta.result_fields %}
-            <th><a href="{{ url_for('admin_list', type=otype, q=q, per_page=per_page, page=1, view=view, sort=col, dir=('asc' if (sort!=col or direction=='desc') else 'desc')) }}">{{ meta.field_meta[col].label }}{% if sort==col %} {{ "▲" if direction=="asc" else "▼" }}{% endif %}</a></th>
-          {% endfor %}
-          <th data-sortkey="files">Files</th>
-          <th>Actions</th>
-        </tr>
+      <tr>
+        <th>
+          <a href="{{ url_for('admin_list', type=otype, q=q, per_page=per_page, page=1, view=view, sort='id', dir=('asc' if (sort!='id' or direction=='desc') else 'desc')) }}">ID
+            {% if sort=='id' %} {{ "▲" if direction=="asc" else "▼" }}{% endif %}</a></th>
+        <th>Img</th>
+        {% for col in meta.result_fields %}
+          <th>
+            <a href="{{ url_for('admin_list', type=otype, q=q, per_page=per_page, page=1, view=view, sort=col, dir=('asc' if (sort!=col or direction=='desc') else 'desc')) }}">
+              {{ meta.field_meta[col].label }}{% if sort==col %} {{ "▲" if direction=="asc" else "▼" }}{% endif %}</a>
+          </th>
+        {% endfor %}
+        <th data-sortkey="files">Files</th>
+        <th>Actions</th>
+      </tr>
       </thead>
       <tbody>
-        {% for r in rows %}
-          {% set thumbs = (r['thumbs_json']|fromjson) %}
-          {% set images = (r['images_json']|fromjson) %}
-          {% set jfiles = (r['json_files_json']|fromjson) %}
-          <tr>
-            <td>{{ r['id'] }}</td>
-            <td class="small">
-              {% if thumbs %}
-                <a href="{{ url_for('serve_upload', fname=(images[-1] if images else thumbs[-1])) }}" target="_blank">
-                  <img class="thumb" src="{{ url_for('serve_upload', fname=thumbs[-1]) }}" alt="">
-                </a>
-              {% elif images %}
-                <a href="{{ url_for('serve_upload', fname=images[-1]) }}" target="_blank">
-                  <img class="thumb" src="{{ url_for('serve_upload', fname=images[-1]) }}" alt="">
-                </a>
-              {% endif %}
-              
-            </td>
-            {% for col in meta.result_fields %}
-              {% set fm = meta.field_meta.get(col, {}) %}
-              {% set v = r[col] if r[col] is not none else '' %}
-              <td class="small">
-                {% if fm.get('widget') == 'radio' and v %}
-                  {% set selected = (v|fromjson) %}
-                  {{ selected|join(', ') }}
-                {% else %}
-                  {{ v }}
-                {% endif %}
-              </td>
-            {% endfor %}
-            <td class="small">
-              {% if images %}
-                {% if images|length == 1 %}
-                  <a class="btn" href="{{ url_for('serve_upload', fname=images[0]) }}" target="_blank">JPEG</a>
-                {% else %}
-                  <a class="btn" href="{{ url_for('admin_record_images', otype=otype, aid=r['id']) }}" target="_blank">JPEG</a>
-                {% endif %}
-              {% endif %}
-              {% set webps = (r['webps_json']|fromjson) %}
-              {% if webps %}<a class="btn" href="{{ url_for('serve_upload', fname=webps[-1]) }}" target="_blank">WebP</a>{% endif %}
-              {% if jfiles %}<a class="btn" href="{{ url_for('admin_record_json', otype=otype, aid=r['id']) }}" target="_blank">JSON</a>{% endif %}
-            </td>
-            <td class="small">
-              <a class="btn primary icon-btn" href="{{ url_for('admin_edit', otype=otype, aid=r['id']) }}" aria-label="Edit" title="Edit">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M12.146.854a.5.5 0 0 1 .708 0l2.2922.292a.5.5 0 0 1 0 .708l-9.5 9.5a.5.5 0 0 1-.168.11l-4 1.5a.5.5 0 0 1-.65-.65l1.5-4a.5.5 0 0 1 .11-.168l9.5-9.5zM11.207 2L13 3.793 14.293 2.5 12.5.707 11.207 2zM12 4.793 10.207 3 3 10.207V12h1.793L12 4.793z"/></svg>
+      {% for r in rows %}
+        {% set thumbs = (r['thumbs_json']|fromjson) %}
+        {% set images = (r['images_json']|fromjson) %}
+        {% set jfiles = (r['json_files_json']|fromjson) %}
+        <tr>
+          <td>{{ r['id'] }}</td>
+          <td class="small">
+            {% if thumbs %}
+              <a href="{{ url_for('serve_upload', fname=(images[-1] if images else thumbs[-1])) }}" target="_blank">
+                <img class="thumb" src="{{ url_for('serve_upload', fname=thumbs[-1]) }}" alt="">
               </a>
-              <form class="inline" action="{{ url_for('admin_delete', otype=otype, aid=r['id']) }}" method="post" onsubmit="return confirm('Delete {{ meta.label }} {{ r['id'] }}?')">
-                <button class="btn danger icon-btn" type="submit" aria-label="Delete" title="Delete">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M5.5 5.5A.5.5 0 0 1 6 6v7a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5.5a.5.5 0 0 1 .5-.5h.5a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0V6a.5.5 0 0 1-.5-.5z"/><path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3h11V2h-11v1z"/></svg>
-              </button>
-              </form>
+            {% elif images %}
+              <a href="{{ url_for('serve_upload', fname=images[-1]) }}" target="_blank">
+                <img class="thumb" src="{{ url_for('serve_upload', fname=images[-1]) }}" alt="">
+              </a>
+            {% endif %}
+
+          </td>
+          {% for col in meta.result_fields %}
+            {% set fm = meta.field_meta.get(col, {}) %}
+            {% set v = r[col] if r[col] is not none else '' %}
+            <td class="small">
+              {% if fm.get('widget') == 'radio' and v %}
+                {% set selected = (v|fromjson) %}
+                {{ selected|join(', ') }}
+              {% else %}
+                {{ v }}
+              {% endif %}
             </td>
-          </tr>
-        {% endfor %}
+          {% endfor %}
+          <td class="small">
+            {% if images %}
+              {% if images|length == 1 %}
+                <a class="btn" href="{{ url_for('serve_upload', fname=images[0]) }}" target="_blank">JPEG</a>
+              {% else %}
+                <a class="btn" href="{{ url_for('admin_record_images', otype=otype, aid=r['id']) }}" target="_blank">JPEG</a>
+              {% endif %}
+            {% endif %}
+            {% set webps = (r['webps_json']|fromjson) %}
+            {% if webps %}
+              <a class="btn" href="{{ url_for('serve_upload', fname=webps[-1]) }}" target="_blank">WebP</a>{% endif %}
+            {% if jfiles %}<a class="btn" href="{{ url_for('admin_record_json', otype=otype, aid=r['id']) }}"
+                              target="_blank">JSON</a>{% endif %}
+          </td>
+          <td class="small">
+            <a class="btn primary icon-btn" href="{{ url_for('admin_edit', otype=otype, aid=r['id']) }}"
+               aria-label="Edit" title="Edit">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="currentColor"
+                   aria-hidden="true">
+                <path d="M12.146.854a.5.5 0 0 1 .708 0l2.2922.292a.5.5 0 0 1 0 .708l-9.5 9.5a.5.5 0 0 1-.168.11l-4 1.5a.5.5 0 0 1-.65-.65l1.5-4a.5.5 0 0 1 .11-.168l9.5-9.5zM11.207 2L13 3.793 14.293 2.5 12.5.707 11.207 2zM12 4.793 10.207 3 3 10.207V12h1.793L12 4.793z"/>
+              </svg>
+            </a>
+            <form class="inline" action="{{ url_for('admin_delete', otype=otype, aid=r['id']) }}" method="post"
+                  onsubmit="return confirm('Delete {{ meta.label }} {{ r['id'] }}?')">
+              <button class="btn danger icon-btn" type="submit" aria-label="Delete" title="Delete">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="currentColor"
+                     aria-hidden="true">
+                  <path d="M5.5 5.5A.5.5 0 0 1 6 6v7a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5.5a.5.5 0 0 1 .5-.5h.5a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0V6a.5.5 0 0 1-.5-.5z"/>
+                  <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3h11V2h-11v1z"/>
+                </svg>
+              </button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
       </tbody>
     </table>
 
-    {% else %}
+  {% else %}
     {# Paragraph mode: existing compact summary per record (default). #}
     <table>
       <thead>
-        <tr>
-          <th>ID</th><th>Img</th><th>Metadata</th>
-          {% if GPS_ENABLED %}<th>GPS</th>{% endif %}
-          <th>Files</th><th>Actions</th>
-        </tr>
+      <tr>
+        <th>ID</th>
+        <th>Img</th>
+        <th>Metadata</th>
+        {% if GPS_ENABLED %}
+          <th>GPS</th>{% endif %}
+        <th>Files</th>
+        <th>Actions</th>
+      </tr>
       </thead>
       <tbody>
-        {% for r in rows %}
+      {% for r in rows %}
         {% set thumbs = (r['thumbs_json']|fromjson) %}
         {% set images = (r['images_json']|fromjson) %}
         {% set jfiles = (r['json_files_json']|fromjson) %}
@@ -162,13 +191,16 @@
                   {% else %}
                     {% set href = url_for('serve_upload', fname=t) %}
                   {% endif %}
-                  <a href="{{ href }}" target="_blank"><img class="thumb" src="{{ url_for('serve_upload', fname=t) }}" alt=""></a>
+                  <a href="{{ href }}" target="_blank"><img class="thumb" src="{{ url_for('serve_upload', fname=t) }}"
+                                                            alt=""></a>
                 {% endfor %}
               </div>
             {% elif images %}
-              <a href="{{ url_for('serve_upload', fname=images[-1]) }}" target="_blank"><img class="thumb" src="{{ url_for('serve_upload', fname=images[-1]) }}" alt=""></a>
+              <a href="{{ url_for('serve_upload', fname=images[-1]) }}" target="_blank"><img class="thumb"
+                                                                                             src="{{ url_for('serve_upload', fname=images[-1]) }}"
+                                                                                             alt=""></a>
             {% endif %}
-            
+
           </td>
           <td class="small">
             {% if r['date_updated'] %}<strong>Date recorded:</strong> {{ r['date_updated'] }}<br>{% endif %}
@@ -191,16 +223,16 @@
             <span>{{ r['exif_datetime'] or '' }} {{ r['exif_make'] or '' }} {{ r['exif_model'] or '' }}</span>
           </td>
           {% if GPS_ENABLED %}
-          <td class="small">
-            {% if r['gps_lat'] and r['gps_lon'] %}
-              {{ "%.6f"|format(r['gps_lat']) }}, {{ "%.6f"|format(r['gps_lon']) }}<br>
-              {% set osm, gmaps = maps_links(r['gps_lat'], r['gps_lon']) %}
-              <a class="btn" href="{{ osm }}" target="_blank">OSM</a>
-              <a class="btn" href="{{ gmaps }}" target="_blank">Maps</a>
-            {% else %}
-              —
-            {% endif %}
-          </td>
+            <td class="small">
+              {% if r['gps_lat'] and r['gps_lon'] %}
+                {{ "%.6f"|format(r['gps_lat']) }}, {{ "%.6f"|format(r['gps_lon']) }}<br>
+                {% set osm, gmaps = maps_links(r['gps_lat'], r['gps_lon']) %}
+                <a class="btn" href="{{ osm }}" target="_blank">OSM</a>
+                <a class="btn" href="{{ gmaps }}" target="_blank">Maps</a>
+              {% else %}
+                —
+              {% endif %}
+            </td>
           {% endif %}
           <td class="small">
             {% if images %}
@@ -211,21 +243,32 @@
               {% endif %}
             {% endif %}
             {% set webps = (r['webps_json']|fromjson) %}
-            {% if webps %}<a class="btn" href="{{ url_for('serve_upload', fname=webps[-1]) }}" target="_blank">WebP</a>{% endif %}
-            {% if jfiles %}<a class="btn" href="{{ url_for('admin_record_json', otype=otype, aid=r['id']) }}" target="_blank">JSON</a>{% endif %}
+            {% if webps %}
+              <a class="btn" href="{{ url_for('serve_upload', fname=webps[-1]) }}" target="_blank">WebP</a>{% endif %}
+            {% if jfiles %}<a class="btn" href="{{ url_for('admin_record_json', otype=otype, aid=r['id']) }}"
+                              target="_blank">JSON</a>{% endif %}
           </td>
           <td class="small">
-            <a class="btn primary icon-btn" href="{{ url_for('admin_edit', otype=otype, aid=r['id']) }}" aria-label="Edit" title="Edit">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M12.146.854a.5.5 0 0 1 .708 0l2.2922.292a.5.5 0 0 1 0 .708l-9.5 9.5a.5.5 0 0 1-.168.11l-4 1.5a.5.5 0 0 1-.65-.65l1.5-4a.5.5 0 0 1 .11-.168l9.5-9.5zM11.207 2L13 3.793 14.293 2.5 12.5.707 11.207 2zM12 4.793 10.207 3 3 10.207V12h1.793L12 4.793z"/></svg>
-              </a>
-            <form class="inline" action="{{ url_for('admin_delete', otype=otype, aid=r['id']) }}" method="post" onsubmit="return confirm('Delete {{ meta.label }} {{ r['id'] }}?')">
+            <a class="btn primary icon-btn" href="{{ url_for('admin_edit', otype=otype, aid=r['id']) }}"
+               aria-label="Edit" title="Edit">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="currentColor"
+                   aria-hidden="true">
+                <path d="M12.146.854a.5.5 0 0 1 .708 0l2.2922.292a.5.5 0 0 1 0 .708l-9.5 9.5a.5.5 0 0 1-.168.11l-4 1.5a.5.5 0 0 1-.65-.65l1.5-4a.5.5 0 0 1 .11-.168l9.5-9.5zM11.207 2L13 3.793 14.293 2.5 12.5.707 11.207 2zM12 4.793 10.207 3 3 10.207V12h1.793L12 4.793z"/>
+              </svg>
+            </a>
+            <form class="inline" action="{{ url_for('admin_delete', otype=otype, aid=r['id']) }}" method="post"
+                  onsubmit="return confirm('Delete {{ meta.label }} {{ r['id'] }}?')">
               <button class="btn danger icon-btn" type="submit" aria-label="Delete" title="Delete">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M5.5 5.5A.5.5 0 0 1 6 6v7a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5.5a.5.5 0 0 1 .5-.5h.5a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0V6a.5.5 0 0 1-.5-.5z"/><path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3h11V2h-11v1z"/></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="currentColor"
+                     aria-hidden="true">
+                  <path d="M5.5 5.5A.5.5 0 0 1 6 6v7a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5.5a.5.5 0 0 1 .5-.5h.5a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-1 0V6a.5.5 0 0 1-.5-.5z"/>
+                  <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3h11V2h-11v1z"/>
+                </svg>
               </button>
             </form>
           </td>
         </tr>
-        {% endfor %}
+      {% endfor %}
       </tbody>
     </table>
   {% endif %}
