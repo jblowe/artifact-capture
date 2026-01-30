@@ -31,6 +31,8 @@
         {% endfor %}
       </select>
       <a class="btn" href="{{ url_for('admin_export_csv', type=otype) }}">CSV</a>
+      <button class="btn" type="button" onclick="adminImportCsv('{{ otype }}')">Import</button>
+      <input id="importCsvInput" type="file" accept=".csv,text/csv" style="display:none">
       <a class="btn" href="{{ url_for('admin_export_geojson', type=otype) }}">GeoJSON</a>
       {% if GPS_ENABLED %}
         <a class="btn" href="{{ url_for('admin_map', type=otype) }}">Map</a>

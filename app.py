@@ -2182,6 +2182,150 @@ def admin_export_csv():
     )
 
 
+@app.route("/admin/import.csv", methods=["POST"])
+@requires_admin
+def admin_import_csv():
+    """Import records from a CSV export previously produced by this app.
+
+    - Accepts multipart/form-data with a file field named "file".
+    - Duplicate records (same meta_signature) are skipped.
+    - Returns JSON: {imported: int, skipped: int, errors: int}
+    """
+
+    import csv
+
+    otype = (request.args.get("type") or request.form.get("type") or "").strip().lower()
+    if otype not in TYPE_META:
+        return jsonify({"error": "Unknown object type"}), 400
+
+    up = request.files.get("file")
+    if not up or not getattr(up, "filename", ""):
+        return jsonify({"error": "No file provided"}), 400
+
+    meta = TYPE_META[otype]
+
+    def _compute_meta_signature(row: dict) -> str:
+        signature_values = {}
+        for fdef in meta["input_fields"]:
+            col, coltype = fdef[1], (fdef[2] if len(fdef) > 2 else "TEXT")
+            t = (str(coltype or "TEXT")).upper().strip()
+            if t.startswith("TIMESTAMP"):
+                continue
+            signature_values[col] = row.get(col) if row.get(col) != "" else None
+        return json.dumps(signature_values, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+    # Determine the columns that exist in the table; ignore anything extra from the CSV.
+    with get_db() as conn:
+        table_cols = [r["name"] for r in conn.execute(f"PRAGMA table_info({otype})").fetchall()]
+
+    # Read the CSV into dict rows.
+    # Be liberal in what we accept: exports may get re-saved by Excel or other tools
+    # with UTF-8/UTF-16 BOMs or Windows encodings.
+    import io
+    import codecs
+
+    try:
+        raw_bytes = up.read()  # FileStorage; read once
+        if raw_bytes is None:
+            raise ValueError("empty")
+
+        # Guess encoding via BOM, then fall back through a small set.
+        enc_candidates = []
+        if raw_bytes.startswith(codecs.BOM_UTF8):
+            enc_candidates = ["utf-8-sig"]
+        elif raw_bytes.startswith(codecs.BOM_UTF16_LE) or raw_bytes.startswith(codecs.BOM_UTF16_BE):
+            enc_candidates = ["utf-16"]
+        elif raw_bytes.startswith(codecs.BOM_UTF32_LE) or raw_bytes.startswith(codecs.BOM_UTF32_BE):
+            enc_candidates = ["utf-32"]
+        else:
+            enc_candidates = ["utf-8-sig", "utf-8", "utf-16", "cp1252", "latin-1"]
+
+        text = None
+        for enc in enc_candidates:
+            try:
+                text = raw_bytes.decode(enc)
+                break
+            except UnicodeDecodeError:
+                continue
+
+        if text is None:
+            # Last-ditch: decode with replacement so we can at least attempt parsing.
+            text = raw_bytes.decode("utf-8", errors="replace")
+
+        # Dialect sniffing (commas vs tabs vs semicolons) with safe fallback.
+        sample = text[:8192]
+        try:
+            dialect = csv.Sniffer().sniff(sample)
+        except Exception:
+            dialect = csv.excel
+
+        reader = csv.DictReader(io.StringIO(text), dialect=dialect)
+        if not reader.fieldnames:
+            raise ValueError("no header")
+
+    except Exception:
+        return jsonify({"error": "Could not read CSV"}), 400
+
+    imported = 0
+    skipped = 0
+    errors = 0
+
+    # Import within one transaction for speed.
+    with get_db() as conn:
+        for raw in reader:
+            try:
+                if not raw:
+                    continue
+
+                # Keep only known columns
+                row = {}
+                for k, v in raw.items():
+                    if k is None:
+                        continue
+                    kk = str(k).strip()
+                    if not kk or kk not in table_cols:
+                        continue
+                    vv = v
+                    if vv is None:
+                        row[kk] = None
+                    else:
+                        s = str(vv)
+                        row[kk] = (None if s.strip() == "" else s)
+
+                # Always let the database assign a new ID
+                row.pop("id", None)
+
+                # Ensure meta_signature exists (older CSVs may not include it)
+                ms = row.get("meta_signature")
+                if not ms:
+                    ms = _compute_meta_signature(row)
+                    row["meta_signature"] = ms
+
+                # Skip duplicates
+                dup = conn.execute(
+                    f"SELECT 1 FROM {otype} WHERE meta_signature=? LIMIT 1",
+                    (ms,),
+                ).fetchone()
+                if dup:
+                    skipped += 1
+                    continue
+
+                cols = [c for c in row.keys() if c in table_cols]
+                if not cols:
+                    errors += 1
+                    continue
+                placeholders = ",".join(["?"] * len(cols))
+                sql = f"INSERT INTO {otype} ({','.join(cols)}) VALUES ({placeholders})"
+                conn.execute(sql, tuple(row[c] for c in cols))
+                imported += 1
+            except Exception:
+                errors += 1
+                continue
+        conn.commit()
+
+    return jsonify({"imported": imported, "skipped": skipped, "errors": errors})
+
+
 @app.route("/admin/record/<otype>/<int:aid>.json")
 @requires_admin
 def admin_record_json(otype: str, aid: int):

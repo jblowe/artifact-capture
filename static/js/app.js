@@ -201,6 +201,61 @@
     } catch(e) {}
   };
 
+  // --- admin CSV import ---
+  window.adminImportCsv = function(otype) {
+    try {
+      var input = document.getElementById('importCsvInput');
+      if (!input) {
+        alert('Import UI not found on this page.');
+        return;
+      }
+
+      // Reset selection so choosing the same file twice still triggers change.
+      input.value = '';
+
+      input.onchange = function() {
+        try {
+          if (!input.files || !input.files.length) return;
+          var file = input.files[0];
+          var fd = new FormData();
+          fd.append('file', file);
+
+          var url = '/admin/import.csv?type=' + encodeURIComponent(otype || '');
+
+          fetch(url, {
+            method: 'POST',
+            body: fd,
+            credentials: 'same-origin'
+          }).then(function(r){
+            return r.json().then(function(j){ return { ok: r.ok, status: r.status, json: j }; });
+          }).then(function(res){
+            if (!res.ok) {
+              var msg = (res.json && (res.json.error || res.json.message)) ? (res.json.error || res.json.message) : ('Import failed (' + res.status + ')');
+              alert(msg);
+              return;
+            }
+            var j = res.json || {};
+            var imported = j.imported || 0;
+            var skipped = j.skipped || 0;
+            var errors = j.errors || 0;
+            alert('Import complete\n\nImported: ' + imported + '\nSkipped (duplicates): ' + skipped + (errors ? ('\nErrors: ' + errors) : ''));
+
+            // Refresh to show newly imported records
+            try { window.location.reload(); } catch(e) {}
+          }).catch(function(err){
+            alert('Import failed: ' + (err && err.message ? err.message : err));
+          });
+        } catch (e) {
+          alert('Import failed.');
+        }
+      };
+
+      input.click();
+    } catch (e) {
+      alert('Import failed.');
+    }
+  };
+
   // Run small initializers
   document.addEventListener('DOMContentLoaded', function(){
     try { initPhotoButtons(); } catch(e) {}
