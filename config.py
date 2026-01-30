@@ -150,20 +150,21 @@ object_types = {
     'photographs':
         {'label': 'Photographs',
          'filename_format': 'PHOTO_{site_name}_{shot_type}ID{record_id}',
-         'fields_to_reset': [],
-         'result_grid': ['photographer', 'shot_type'],
+         'fields_to_reset': ['comments', 'shot_type'],
+         'index': ['tnumber', 'context', 'excavation_date'],
+         'result_grid': ['photographer', 'shot_type', 'comments'],
+         'copy_from': 'artifacts',
          'input_fields': [
              ('Photographer', 'photographer', 'TEXT', RECORDERS),
              SEASON, CONTEXT, EX_UNIT, AREA, LEVEL, EX_DATE,
              ('Site Name', 'site_name', 'UPPERCASE'),
              ('Shot type', 'shot_type', 'TEXT'),
-             ('Date recorded', 'date_recorded', 'DATE'),
+             ('Comments', 'comments', 'TEXT'),
+             ('Date recorded (optional)', 'date_recorded', 'DATE'),
              ('Date updated', 'date_updated', 'TIMESTAMP'),
          ],
          'layout_rows': [
              ['photographer'],
-             ['season'],
-             ['site_name'],
              ['context'],
              ['comments'],
              ['date_recorded'],
@@ -172,14 +173,12 @@ object_types = {
              ['photographer'],
              ['season', 'tnumber'],
              ['excavation_unit', 'area', 'level'],
-             ['site_name'],
              ['comments'],
              ['date_recorded'],
          ],
          'required_fields': (
              'photographer',
-             'site_name',
-             'shot_type',
+             'comments',
          )
          },
 }
