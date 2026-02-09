@@ -1,0 +1,76 @@
+CHANGELOG for artifact-capture
+
+OK, it is not a *real* change log, but a list of changes resulting from git log
+sometimes with some human annotation after the fact.
+
+This is version 0.9.0-rc1
+Sun Feb  8 17:06:04 PST 2026
+
+54843be (HEAD -> main, origin/main, origin/HEAD) add runtime parameters for server start; tweaks on admin_list.html
+c485e51 add rsync script to keep local and aws data in sync
+f1097e4 revise css to use full window; further tap config tweaks
+2a1d418 update tap config: photographs
+c5f4786 add 'import csv' feature
+d428292 code reformat only; no functional changes
+e124f75 code reformat only; no functional changes
+9a377f3 chatgpt revises sorting and paginations
+5c41463 chatgpt add counts to review display sections
+8e82581 chatgpt has been persuaded to reintroduce the field-based displays in Review
+2958a5f chatgpt's improvements to grid display
+fd4e89b chatgpt revisions to grid display
+86f4bb4 add new GRID_MAX_WIDTH parameter to config.py
+00d4151 handle 'result_grid' parm from config.py
+da8c655 chatgpt's architecture diagram
+9196afc add 'grid' display type (initial chatgpt version)
+92b6c40 add 'result_grid' parameter to config.py
+a4336cd further refactoring by chatgpt. saving working version
+17c3a07 further refactoring by chatgpt for record rendering
+5a3907e chatgpt's further revisions to app.py for record rendering
+6331b7a chatgpt's further revisions to record rendering
+e373f5f the ai's fix for the sporadic error 500's on submit/
+5a1f454 save the current best config.py for tap
+50cbb73 loosen requirements.txt
+29b2007 chatgpt fixes to add info/ path, tweak rendering and config.
+58dc1e9 tweaks to config.py for tap: dates, labels, etc.
+49eed1c add instructions files (in html) in both thai and english
+300b968 chatgpt fixed a bug in Edit > Take Photo > Add image
+0b357ac initial version of instructions in both English and Thai
+d35893b chatgpt has fixed its own bug in image uploading
+c0b28cb improve rendering of enumerated fields in Index and Edit; fix now() bug
+f4d6adc fix bug in dates in admin_edit
+0296ba8 reorder index fields for artifacts in TAP config
+d1532d0 add new feature 'index'
+36001e0 revisions to config.py to handle the new 'index' feature
+37b1cb3 further minor bug fixes by chatgpt
+273ec06 further revisions by chatgpt: bug fix and 'reset selected'
+b5bc954 further chatgpt tweaks: bug fixes and styling
+1382c46 chatgpts enhancements for new workflow, etc.
+f0973a5 minor revisions tap config
+ce9295a revised css for mobile, revise image filenaming
+76525de revise tap config
+6ffb209 tweak config.py for tap
+fce308f add pagination for edit results, fix bugs
+ff56fc5 major refatoring by chatgpt. took a while to get it right
+27d1ae3 revise config files for tap and mmap
+426ba3a revisions to tap config
+53a1e67 add new object_type for mmap: photographs
+d535288 minor bug fixes and refactoring: reset, layout of nav links
+47ffa96 revise mmap configs to add 'photographs' object type. tweak banner
+ad1916d revisions to gps info rendering. also adding favicon.ico
+2243745 use this favicon.ico
+5d4eba7 handle 'card close' properly; and handle favicon.ico
+ba64ad7 chatgpt's revisions to app.js to make geolocations work
+187ea02 adjust precendence in setting GPS_ENABLED
+deb7903 just changing text of GPS message
+97edb7f revise configs for TAP and MMAP
+8d5f6a3 make the nav bar item x-small for mobile
+a04827e major refactor to handle multiple object type, multiple photos, etc.
+e007e9e GPS_ENABLED is off by default now
+ab46b43 add instructions for configuring GPS_ENABLED
+9c85695 gitignore .idea (we are using PyCharm)
+6ee236d revise app to handle multiple tabs
+13ff213 remove authentication defaults from wsgi.py
+2d82763 need WSGIPassAuthorization for authentication to work
+6376002 initial commit of code
+328b58d initial tidying of repo
+5ae2a29 Initial commit
