@@ -58,16 +58,9 @@
       <span class="small">Page {{ page }} of {{ total_pages }}</span>
 
       <a class="btn {% if page <= 1 %}disabled{% endif %}"
-         href="
-
-
-                 {% if page>1 %}{{ url_for('admin_list', type=otype, q=q, per_page=per_page, page=prev_page, view=view, sort=sort, dir=direction) }}{% else %}#{% endif %}">Prev</a>
-
+         href="{% if page>1 %}{{ url_for('admin_list', type=otype, q=q, per_page=per_page, page=prev_page, view=view, sort=sort, dir=direction) }}{% else %}#{% endif %}">Prev</a>
       <a class="btn {% if page >= total_pages %}disabled{% endif %}"
-         href="
-
-
-                 {% if page<total_pages %}{{ url_for('admin_list', type=otype, q=q, per_page=per_page, page=next_page, view=view, sort=sort, dir=direction) }}{% else %}#{% endif %}">Next</a>
+         href="{% if page<total_pages %}{{ url_for('admin_list', type=otype, q=q, per_page=per_page, page=next_page, view=view, sort=sort, dir=direction) }}{% else %}#{% endif %}">Next</a>
     </div>
   </div>
 

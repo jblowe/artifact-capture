@@ -2474,5 +2474,15 @@ def admin_map():
     )
 
 
-if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=3000)
+# run(server='gunicorn', port=parmz.PORT)
+if __name__ == '__main__':
+
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Run the Flask app.")
+    parser.add_argument('--host', default='localhost')
+    parser.add_argument('--port', type=int, default=3000)
+    parser.add_argument('--debug', action='store_true')
+    args = parser.parse_args()
+
+    app.run(host=args.host, port=args.port, debug=args.debug)
