@@ -12,6 +12,7 @@
         <th>{{ fm.get('label') or col }}</th>
       {% endfor %}
       <th>Updated</th>
+      <th>Actions</th>
     </tr>
     </thead>
     <tbody>
@@ -35,6 +36,7 @@
             {% elif 'date_updated' in r.keys() and r['date_updated'] %}{{ r['date_updated'] }}
           {% endif %}
         </td>
+        <td><a class="btn" style="padding:3px 8px; font-size:12px;" href="{{ url_for('admin_edit', otype=otype, aid=r['id']) }}">Edit</a></td>
       </tr>
     {% endfor %}
     </tbody>

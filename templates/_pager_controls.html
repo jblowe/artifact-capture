@@ -1,0 +1,48 @@
+
+{# Shared pager / view controls for Browse. Expects:
+   has_prev, has_next, prev_q, next_q, start_n, end_n, total,
+   otype, field, view, page, per_page, per_page_choices, mode, q
+#}
+
+<div style="display:flex; justify-content:flex-end; align-items:center; gap:10px; margin-top:10px; flex-wrap:wrap;">
+  <div class="meta" style="white-space:nowrap;">
+    {% if has_prev %}
+      <a href="{{ url_for('browse', **prev_q) }}">« Previous</a>
+    {% else %}
+      <span style="opacity:.5;">« Previous</span>
+    {% endif %}
+    &nbsp;|&nbsp;
+    {{ start_n }} - {{ end_n }} of {{ total }}
+    &nbsp;|&nbsp;
+    {% if has_next %}
+      <a href="{{ url_for('browse', **next_q) }}">Next »</a>
+    {% else %}
+      <span style="opacity:.5;">Next »</span>
+    {% endif %}
+  </div>
+
+  <form method="get" action="{{ url_for('browse') }}"
+        style="display:inline-flex; align-items:center; gap:6px; margin:0;">
+    <input type="hidden" name="type" value="{{ otype }}">
+    <input type="hidden" name="field" value="{{ field }}">
+    <input type="hidden" name="view" value="{{ view }}">
+    <input type="hidden" name="mode" value="{{ mode }}">
+    <input type="hidden" name="q" value="{{ q }}">
+    <input type="hidden" name="page" value="1">
+    <select name="per_page" onchange="this.form.submit()">
+      {% for n in per_page_choices %}
+        <option value="{{ n }}" {% if per_page == n %}selected{% endif %}>{{ n }}</option>
+      {% endfor %}
+    </select>
+    <span class="meta">per page</span>
+  </form>
+
+  <div style="display:inline-flex; gap:6px;">
+    <a class="btn {% if view == 'para' %}primary{% endif %}"
+       href="{{ url_for('browse', type=otype, field=field, view='para', page=page, per_page=per_page, mode=mode, q=q) }}">paragraph</a>
+    <a class="btn {% if view == 'table' %}primary{% endif %}"
+       href="{{ url_for('browse', type=otype, field=field, view='table', page=page, per_page=per_page, mode=mode, q=q) }}">table</a>
+    <a class="btn {% if view == 'grid' %}primary{% endif %}"
+       href="{{ url_for('browse', type=otype, field=field, view='grid', page=page, per_page=per_page, mode=mode, q=q) }}">grid</a>
+  </div>
+</div>

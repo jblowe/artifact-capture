@@ -12,7 +12,7 @@
           <img class="thumb" src="{{ url_for('serve_upload', fname=t) }}" alt="thumb">
         </a>
         {% if allow_delete %}
-          <form method="post" action="{{ url_for('admin_delete_image', otype=otype, aid=r['id'], img_idx=i) }}"
+          <form method="post" action="{{ url_for('admin_delete_image', otype=otype, aid=r['id'], idx=i) }}"
                 style="position:absolute; top:2px; right:2px;">
             <button class="btn danger icon-btn" type="submit" aria-label="Delete image" title="Delete image"
                     onclick="return confirm('Delete this image?');">
@@ -36,7 +36,7 @@
           <img class="thumb" src="{{ url_for('serve_upload', fname=img) }}" alt="image">
         </a>
         {% if allow_delete %}
-          <form method="post" action="{{ url_for('admin_delete_image', otype=otype, aid=r['id'], img_idx=i) }}"
+          <form method="post" action="{{ url_for('admin_delete_image', otype=otype, aid=r['id'], idx=i) }}"
                 style="position:absolute; top:2px; right:2px;">
             <button class="btn danger icon-btn" type="submit" aria-label="Delete image" title="Delete image"
                     onclick="return confirm('Delete this image?');">

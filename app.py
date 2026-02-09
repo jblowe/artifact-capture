@@ -1,50 +1,30 @@
+
+from __future__ import annotations
+
 from flask import (
     Flask, render_template, request, redirect, url_for,
-    flash, Response, send_from_directory, jsonify, g, session
+    flash, send_from_directory, jsonify, g, session, Response
 )
 from pathlib import Path
-from functools import wraps
 from io import BytesIO
-import sqlite3, time, os, base64, json, ast, re, collections
+from functools import wraps
+import sqlite3, os, time, json, ast, re, collections
+from datetime import datetime, date
 
 from PIL import Image, ImageOps, ExifTags
-
-import config
-
-"""Artifact/Site capture app
-
-A webapp to allow field workers and others to take and annotate photos with
-suitable metadata in the field and elsewhere.
-
-It supports multiple object types (e.g., artifacts, sites) defined in
-config.py as `object_types`. Each object type maps to its own SQLite table and
-its own set of fields. Images for all types live in the same UPLOAD_DIR.
-
-Multiple images can be attached to the same record: when a user uploads another
-image with identical non-timestamp metadata for the same object type, we append
-the new image filenames to JSON lists stored on that record.
-"""
+from dateutil import parser as dtparser
 
 import config as app_config
 
-object_types = app_config.object_types
-APP_BRAND = getattr(app_config, 'APP_BRAND', 'Artifact Capture')
-APP_SUBTITLE = getattr(app_config, 'APP_SUBTITLE', '')
-APP_LOGO = getattr(app_config, 'APP_LOGO', 'logo.svg')
-ADMIN_LABEL = getattr(app_config, 'ADMIN_LABEL', 'Admin')
-DATE_FORMAT = getattr(app_config, 'DATE_FORMAT', '%Y-%m-%d')
-TIMESTAMP_FORMAT = getattr(app_config, 'TIMESTAMP_FORMAT', DATE_FORMAT + 'T%H:%M:%S')
+
+# -----------------------------------------------------------------------------
+# App / paths / constants (keep compatible with config.py expectations)
+# -----------------------------------------------------------------------------
 
 APP_ROOT = Path(__file__).parent.resolve()
 
-# Runtime-writable directories / files should be configurable in production.
-UPLOAD_DIR = Path(
-    os.environ.get("ARTCAP_UPLOAD_DIR", str(APP_ROOT / "uploads"))
-).expanduser().resolve()
-
-DB_PATH = Path(
-    os.environ.get("ARTCAP_DB_PATH", str(APP_ROOT / "data" / "artifacts.db"))
-).expanduser().resolve()
+UPLOAD_DIR = Path(os.environ.get("ARTCAP_UPLOAD_DIR", str(APP_ROOT / "uploads"))).expanduser().resolve()
+DB_PATH = Path(os.environ.get("ARTCAP_DB_PATH", str(APP_ROOT / "data" / "artifacts.db"))).expanduser().resolve()
 
 ADMIN_USER = os.getenv("ARTCAP_ADMIN_USER", "admin")
 ADMIN_PASS = os.getenv("ARTCAP_ADMIN_PASS", "change-me")
@@ -55,13 +35,22 @@ THUMB_DIM = int(os.getenv("ARTCAP_THUMB_DIM", "400"))
 JPEG_QUALITY = int(os.getenv("ARTCAP_JPEG_QUALITY", "92"))
 WEBP_QUALITY = int(os.getenv("ARTCAP_WEBP_QUALITY", "85"))
 
+APP_BRAND = getattr(app_config, "APP_BRAND", "Artifact Capture")
+APP_SUBTITLE = getattr(app_config, "APP_SUBTITLE", "")
+APP_LOGO = getattr(app_config, "APP_LOGO", "logo.svg")
+ADMIN_LABEL = getattr(app_config, "ADMIN_LABEL", "Admin")
+DATE_FORMAT = getattr(app_config, "DATE_FORMAT", "%Y-%m-%d")
+TIMESTAMP_FORMAT = getattr(app_config, "TIMESTAMP_FORMAT", DATE_FORMAT + "T%H:%M:%S")
+
+BANNER_BG = getattr(app_config, "BANNER_BG", "#111827")
+BANNER_FG = getattr(app_config, "BANNER_FG", "#ffffff")
+BANNER_ACCENT = getattr(app_config, "BANNER_ACCENT", "#60a5fa")
+SHOW_LOGO = bool(getattr(app_config, "SHOW_LOGO", True))
+
+GRID_MAX_WIDTH = int(getattr(app_config, "GRID_MAX_WIDTH", getattr(app_config, "grid_max_width", 500)))
+
 
 def _env_bool(name: str, default: bool = False) -> bool:
-    """Parse a boolean env var.
-
-    Accepts: 1/0, true/false, yes/no, on/off (case-insensitive).
-    Missing or empty values fall back to `default`.
-    """
     raw = os.getenv(name)
     if raw is None:
         return bool(default)
@@ -71,65 +60,26 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return raw in ("1", "true", "yes", "y", "on")
 
 
-# GPS feature flag.
-#
-# Precedence:
-#   1) If ARTCAP_GPS_ENABLED is set in the environment, it wins.
-#   2) Otherwise fall back to config.GPS_ENABLED (if present), else False.
-GPS_ENABLED = _env_bool("ARTCAP_GPS_ENABLED", default=getattr(config, "GPS_ENABLED", False))
-app = Flask(__name__)
-
-# Grid view sizing (can be overridden in config.py)
-GRID_MAX_WIDTH = int(getattr(config, "GRID_MAX_WIDTH", getattr(config, "grid_max_width", 500)))
+GPS_ENABLED = _env_bool("ARTCAP_GPS_ENABLED", default=getattr(app_config, "GPS_ENABLED", False))
 
 
-@app.context_processor
-def inject_ui_globals():
-    # Make a few UI globals available to all templates
-    return {
-        "grid_max_width": GRID_MAX_WIDTH,
-    }
+# -----------------------------------------------------------------------------
+# Config normalization: build TYPE_META from config.object_types (unchanged schema)
+# -----------------------------------------------------------------------------
 
+def _parse_widget(widget_raw: str) -> tuple[str, list[str] | None]:
+    """Parse DROPDOWN('a','b') / RADIO('a','b') strings from config.py."""
+    widget_raw = (widget_raw or "").strip()
+    if not widget_raw:
+        return "text", None
 
-app.secret_key = APP_SECRET
-
-
-@app.before_request
-def _log_all_posts_to_wsgi():
-    """Log all POSTs (including form fields) so they appear in Apache/mod_wsgi logs.
-
-    Note: Apache access logs do not include request bodies by default; this logs to
-    the application logger (typically the Apache error log under mod_wsgi).
-    """
-    try:
-        if request.method == "POST":
-            form_dict = {k: request.form.getlist(k) if len(request.form.getlist(k)) > 1 else request.form.get(k)
-                         for k in request.form.keys()}
-            files_dict = {k: (v.filename if v else "") for k, v in (request.files or {}).items()}
-            app.logger.info("POST %s form=%s files=%s", request.path, form_dict, files_dict)
-    except Exception:
-        # Never break requests due to logging.
-        pass
-
-
-def _parse_widget(widget_raw: str):
-    """Parse config widget descriptors.
-
-    Supports:
-      - DROPDOWN('A','B',...)
-      - RADIO('A','B',...)   # rendered as a multi-select checkbox group (0+ selections)
-    """
-    widget_raw = widget_raw or ""
-    if not isinstance(widget_raw, str):
-        return "auto", None
-
-    up = widget_raw.strip().upper()
+    up = widget_raw.upper()
     if up.startswith("DROPDOWN"):
         kind = "dropdown"
     elif up.startswith("RADIO"):
         kind = "radio"
     else:
-        return "auto", None
+        return "text", None
 
     try:
         start = widget_raw.index("(")
@@ -140,23 +90,14 @@ def _parse_widget(widget_raw: str):
         else:
             options = [str(vals)]
         return kind, options
-    except Exception:
-        print(f"[FATAL] Could not parse widget spec {widget_raw!r} in config.py")
-        raise
+    except Exception as e:
+        raise RuntimeError(f"Could not parse widget spec {widget_raw!r} in config.py") from e
 
 
-# Normalize and validate object_types config.
-OBJECT_TYPES = object_types or {}
+OBJECT_TYPES = getattr(app_config, "object_types", None) or {}
 if not isinstance(OBJECT_TYPES, dict) or not OBJECT_TYPES:
     raise RuntimeError("config.py must define a non-empty dict named object_types")
 
-TYPE_META = {}
-
-# Columns that are managed by the server and should not be treated like
-# user-configured input fields (e.g., to avoid duplicate display).
-# Columns managed by the server (or otherwise "system/reserved").
-# These may be hidden by default in some views, but **must be allowed** to appear
-# if explicitly referenced in config.py layout_rows/result_rows.
 SYSTEM_COLUMNS = {
     "id",
     "gps_lat", "gps_lon", "gps_alt", "gps_acc",
@@ -164,20 +105,17 @@ SYSTEM_COLUMNS = {
     "date_last_saved", "date_recorded", "date_updated",
 }
 
+TYPE_META: dict[str, dict] = {}
+
 for otype, cfg in OBJECT_TYPES.items():
-    if not isinstance(cfg, dict):
-        raise RuntimeError(f"object_types[{otype!r}] must be a dict")
     label = cfg.get("label") or otype.title()
     input_fields = cfg.get("input_fields") or []
-    layout_rows = cfg.get("layout_rows") or []
-    result_rows = cfg.get("result_rows") or []  # layout for Recent/Edit results
-    # Required fields should only refer to user-configured columns.
-    required_fields = tuple([c for c in (cfg.get("required_fields") or ()) if c not in SYSTEM_COLUMNS])
-    filename_format = cfg.get("filename_format") or cfg.get("filename_format")
     if not input_fields:
         raise RuntimeError(f"object_types[{otype!r}] has no input_fields")
 
-    field_meta = {}
+    required_fields = tuple([c for c in (cfg.get("required_fields") or ()) if c not in SYSTEM_COLUMNS])
+
+    field_meta: dict[str, dict] = {}
     for f in input_fields:
         flabel, col, sql_type = f[0], f[1], (f[2] if len(f) > 2 else "TEXT")
         sql_type_str = str(sql_type or "TEXT")
@@ -185,15 +123,14 @@ for otype, cfg in OBJECT_TYPES.items():
 
         constant_value = None
         server_now = False
+
         if st_up == "CONSTANT":
-            # A CONSTANT field is rendered read-only with a fixed value, and stored as TEXT in SQLite.
             widget = "constant"
             options = None
             constant_value = str(f[3]) if len(f) > 3 else ""
             sqlite_type = "TEXT"
             sql_type_str = "TEXT"
         elif st_up == "UPPERCASE":
-            # UPPERCASE is a TEXT field rendered with CSS text-transform: uppercase.
             widget = "uppercase"
             options = None
             sqlite_type = "TEXT"
@@ -202,9 +139,8 @@ for otype, cfg in OBJECT_TYPES.items():
             widget_raw = f[3] if len(f) > 3 else ""
             widget, options = _parse_widget(widget_raw)
             sqlite_type = sql_type_str
-        # Special server-managed timestamps.
-        # - date_updated: if the user defines it as TIMESTAMP, manage it as NOW() on save.
-        # - date_recorded: if the user defines it as TIMESTAMP, manage it as NOW() on BOTH create and update.
+
+        # server-managed timestamps
         if str(col).lower() == "date_updated" and st_up.startswith("TIMESTAMP"):
             server_now = True
         if str(col).lower() == "date_recorded" and (st_up.startswith("TIMESTAMP") or st_up == "TIMESTAMP"):
@@ -213,8 +149,8 @@ for otype, cfg in OBJECT_TYPES.items():
         field_meta[col] = {
             "label": flabel,
             "col": col,
-            "sql_type": sql_type_str,  # for UI decisions
-            "sqlite_type": sqlite_type,  # for schema creation
+            "sql_type": sql_type_str,     # UI semantics
+            "sqlite_type": sqlite_type,   # schema
             "widget": widget,
             "options": options,
             "constant_value": constant_value,
@@ -222,639 +158,362 @@ for otype, cfg in OBJECT_TYPES.items():
             "required": col in required_fields,
         }
 
-    # result_rows controls which fields appear (and how they are arranged) in Recent and Edit views.
-    # If not provided, we fall back to layout_rows; if still empty, show one field per row.
-    result_rows_effective = result_rows or layout_rows or [[f[1]] for f in input_fields if
-                                                           (len(f) > 1 and f[1] not in SYSTEM_COLUMNS)]
-    # Allow "system/reserved" columns to be displayed if explicitly referenced in
-    # layout_rows/result_rows by adding minimal metadata for them.
-    referenced_cols = set()
-    for _r in (layout_rows or []):
-        for _c in (_r or []):
-            referenced_cols.add(_c)
-    for _r in (result_rows or []):
-        for _c in (_r or []):
-            referenced_cols.add(_c)
-
-    RESERVED_DEFAULTS = {
-        "id": {"label": "ID", "sqlite_type": "INTEGER", "sql_type": "INTEGER", "widget": "readonly", "options": None,
-               "constant_value": None, "server_now": False, "required": False},
-        "date_last_saved": {"label": "Date last saved", "sqlite_type": "TEXT", "sql_type": "TIMESTAMP",
-                            "widget": "text", "options": None,
-                            "constant_value": None, "server_now": True, "required": False},
-        "date_recorded": {"label": "Date recorded", "sqlite_type": "TEXT", "sql_type": "TIMESTAMP", "widget": "text",
-                          "options": None,
-                          "constant_value": None, "server_now": True, "required": False},
-        "date_updated": {"label": "Date updated", "sqlite_type": "TEXT", "sql_type": "TIMESTAMP", "widget": "text",
-                         "options": None,
-                         "constant_value": None, "server_now": True, "required": False},
-        "gps_lat": {"label": "GPS lat", "sqlite_type": "REAL", "sql_type": "FLOAT", "widget": "text", "options": None,
-                    "constant_value": None, "server_now": False, "required": False},
-        "gps_lon": {"label": "GPS lon", "sqlite_type": "REAL", "sql_type": "FLOAT", "widget": "text", "options": None,
-                    "constant_value": None, "server_now": False, "required": False},
-        "gps_alt": {"label": "GPS alt", "sqlite_type": "REAL", "sql_type": "FLOAT", "widget": "text", "options": None,
-                    "constant_value": None, "server_now": False, "required": False},
-        "gps_acc": {"label": "GPS acc", "sqlite_type": "REAL", "sql_type": "FLOAT", "widget": "text", "options": None,
-                    "constant_value": None, "server_now": False, "required": False},
-        "images_json": {"label": "Images", "sqlite_type": "TEXT", "sql_type": "TEXT", "widget": "text", "options": None,
-                        "constant_value": None, "server_now": False, "required": False},
-        "thumbs_json": {"label": "Thumbs", "sqlite_type": "TEXT", "sql_type": "TEXT", "widget": "text", "options": None,
-                        "constant_value": None, "server_now": False, "required": False},
-        "webps_json": {"label": "WebPs", "sqlite_type": "TEXT", "sql_type": "TEXT", "widget": "text", "options": None,
-                       "constant_value": None, "server_now": False, "required": False},
-        "json_files_json": {"label": "JSON files", "sqlite_type": "TEXT", "sql_type": "TEXT", "widget": "text",
-                            "options": None,
-                            "constant_value": None, "server_now": False, "required": False},
-    }
-
-    for _c in referenced_cols:
-        if _c not in field_meta and _c in RESERVED_DEFAULTS:
-            d = RESERVED_DEFAULTS[_c]
-            field_meta[_c] = {
-                "label": d["label"],
-                "col": _c,
-                "sql_type": d["sql_type"],
-                "sqlite_type": d["sqlite_type"],
-                "widget": d["widget"],
-                "options": d["options"],
-                "constant_value": d["constant_value"],
-                "server_now": d["server_now"],
-                "required": d["required"],
-            }
-
-    cleaned = []
-    for row in (result_rows_effective or []):
-        cols = []
-        for col in (row or []):
-            if col in field_meta:
-                cols.append(col)
-        if cols:
-            cleaned.append(cols)
-    result_rows_effective = cleaned
-
-    fields_to_reset = list(cfg.get('fields_to_reset') or [])
-    copy_from = (cfg.get('copy_from') or '').strip()
-    index_fields = list(cfg.get('index') or [])
-    result_grid = list(cfg.get('result_grid') or cfg.get('result_gird') or [])
-    # Keep only known columns (user fields or system columns).
-    _rg_clean = []
-    for _c in result_grid:
-        if _c in field_meta or _c in SYSTEM_COLUMNS:
-            _rg_clean.append(_c)
-    result_grid = _rg_clean
-    # Flattened unique list of layout field names (used by client-side helpers)
-    layout_fields = []
-    seen = set()
-    for _row in (layout_rows or []):
-        for _col in (_row or []):
-            if _col in field_meta and _col not in seen:
-                layout_fields.append(_col)
-                seen.add(_col)
     TYPE_META[otype] = {
+        "otype": otype,
         "label": label,
+        "cfg": cfg,
         "input_fields": input_fields,
-        # Convenience list for templates: all user-configured fields except
-        # system-managed columns. (TIMESTAMP fields are allowed.)
-        "display_fields": [f for f in input_fields if (len(f) > 1 and f[1] not in SYSTEM_COLUMNS)],
-        "layout_rows": layout_rows,
-        "layout_fields": layout_fields,
-        "result_rows": result_rows_effective,
-        "result_fields": [col for row in result_rows_effective for col in row],
-        "required_fields": required_fields,
-        "filename_format": filename_format,
-        "fields_to_reset": fields_to_reset,
-        "copy_from": copy_from,
-        "index_fields": index_fields,
-        "result_grid": result_grid,
         "field_meta": field_meta,
-    }
-
-# Expose to templates.
-app.jinja_env.globals["OBJECT_TYPES"] = TYPE_META
-
-
-# Template helpers
-@app.template_filter("mmddyyyy")
-def _filter_mmddyyyy(val):
-    return _mmddyyyy_from_iso(val)
-
-
-def make_banner_title(*parts: str) -> str:
-    base = APP_BRAND
-    if APP_SUBTITLE:
-        base = f"{base} · {APP_SUBTITLE}"
-    parts = [p for p in parts if p]
-    if parts:
-        return " · ".join(parts)
-    return base
-
-
-def _get_current_type() -> str:
-    """Best-effort object type for navbar URLs."""
-    # Prefer explicit value set by routes that render templates.
-    try:
-        if getattr(g, "current_type", None):
-            ct = str(g.current_type)
-            if ct in TYPE_META:
-                return ct
-    except Exception:
-        pass
-
-    # Try URL params
-    for k in ("type", "object_type"):
-        v = (request.view_args or {}).get(k) if hasattr(request, "view_args") else None
-        if v and str(v) in TYPE_META:
-            return str(v)
-        v = request.args.get(k) if hasattr(request, "args") else None
-        if v and str(v) in TYPE_META:
-            return str(v)
-
-    # Fallback: first configured type
-    return next(iter(TYPE_META.keys()))
-
-
-@app.context_processor
-def inject_globals():
-    ct = _get_current_type()
-    endpoint = (request.endpoint or '').lower() if hasattr(request, 'endpoint') else ''
-    # Treat all admin_* endpoints as 'edit' for navbar highlighting.
-    active = {
-        'upload': endpoint in ('form',),
-        'recent': endpoint in ('recent',),
-        'edit': endpoint.startswith('admin_'),
-        'review': endpoint in ('review', 'index',),
-        'info': endpoint in ('info',),
-        'user': endpoint in ('user',),
-    }
-
-    nav_links = [
-        {'key': 'upload', 'label': 'Upload', 'url': url_for('form', type=ct), 'active': active['upload']},
-        {'key': 'recent', 'label': 'Recent', 'url': url_for('recent', type=ct), 'active': active['recent']},
-        {'key': 'edit', 'label': 'Edit', 'url': url_for('admin_list', type=ct), 'active': active['edit']},
-        {'key': 'review', 'label': 'Review', 'url': url_for('review', type=ct), 'active': active['review']},
-        {'key': 'info', 'label': 'Info', 'url': url_for('info'), 'active': active['info']},
-        # {'key': 'user', 'label': 'Account', 'url': url_for('user'), 'active': active['user']},
-    ]
-
-    return {
-        'APP_BRAND': getattr(config, 'APP_BRAND', 'Artifact Capture'),
-        'APP_SUBTITLE': getattr(config, 'APP_SUBTITLE', ''),
-        'APP_LOGO': getattr(config, 'APP_LOGO', 'logo.svg'),
-        'ADMIN_LABEL': getattr(config, 'ADMIN_LABEL', 'Admin'),
-        'GPS_ENABLED': GPS_ENABLED,
-
-        'BANNER_BG': getattr(config, 'BANNER_BG', '#1f2937'),
-        'BANNER_FG': getattr(config, 'BANNER_FG', '#ffffff'),
-        'BANNER_ACCENT': getattr(config, 'BANNER_ACCENT', '#60a5fa'),
-        'SHOW_LOGO': getattr(config, 'SHOW_LOGO', True),
-        'NAV_LINKS': nav_links,
-        # Default banner subtitle: current object type (overridden by routes that pass banner_title)
-        'banner_title': make_banner_title(ct.capitalize()) if ct else '',
+        "index_fields": list(cfg.get("index") or []),
+        "result_rows": cfg.get("result_rows") or cfg.get("layout_rows") or [],
+        "layout_rows": cfg.get("layout_rows") or [],
+        "fields_to_reset": cfg.get("fields_to_reset") or [],
+        "copy_from": cfg.get("copy_from"),
+        "filename_format": cfg.get("filename_format") or "",
+        "result_grid": cfg.get("result_grid") or [],
     }
 
 
-app.jinja_env.globals["GPS_ENABLED"] = GPS_ENABLED
-
-
-def get_db():
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def init_db():
-    """Create/upgrade DB tables for each configured object type."""
-
-    # Columns common to all object-type tables.
-    # Image fields are JSON-encoded lists so multiple images can attach to a record.
-    base_cols = [
-        ("id", "INTEGER PRIMARY KEY AUTOINCREMENT"),
-        ("images_json", "TEXT"),
-        ("thumbs_json", "TEXT"),
-        ("webps_json", "TEXT"),
-        ("json_files_json", "TEXT"),
-        ("meta_signature", "TEXT"),
-        ("date_last_saved", "TEXT"),
-        ("width", "INTEGER"),
-        ("height", "INTEGER"),
-        ("timestamp", "INTEGER"),
-        ("ip", "TEXT"),
-        ("user_agent", "TEXT"),
-        ("exif_datetime", "TEXT"),
-        ("exif_make", "TEXT"),
-        ("exif_model", "TEXT"),
-        ("exif_orientation", "INTEGER"),
-        ("gps_lat", "REAL"),
-        ("gps_lon", "REAL"),
-        ("gps_alt", "REAL"),
-    ]
-
-    with get_db() as conn:
-        for otype, meta in TYPE_META.items():
-            table = otype
-            meta_cols = [(f[1], meta["field_meta"][f[1]]["sqlite_type"]) for f in meta["input_fields"]]
-
-            cols_sql = ",\n                ".join(
-                [f"{name} {ctype}" for name, ctype in [base_cols[0]] + meta_cols + base_cols[1:]]
-            )
-            conn.execute(f"CREATE TABLE IF NOT EXISTS {table} ({cols_sql});")
-
-            existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
-            for name, ctype in meta_cols + base_cols:
-                if name not in existing:
-                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {ctype}")
-
-            # Helpful index for record matching by metadata signature.
-            try:
-                conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table}_meta_signature ON {table}(meta_signature)")
-            except Exception:
-                pass
-
-
-def ensure_runtime_paths():
-    """Create runtime directories (uploads/ and DB parent) and initialize DB schema.
-
-    This runs at import time under mod_wsgi, so failures here surface immediately and
-    clearly in the Apache error log.
-    """
-    try:
-        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-
-        # Touch the DB file (directory must exist). SQLite will create it if missing.
-        conn = sqlite3.connect(str(DB_PATH))
-        conn.close()
-
-        # Ensure schema exists / evolves.
-        init_db()
-    except Exception as e:
-        # Avoid a silent failure: make the path and error obvious.
-        print(f"[FATAL] Cannot initialize runtime paths. UPLOAD_DIR={UPLOAD_DIR} DB_PATH={DB_PATH} error={e}")
-        raise
-
-
-ensure_runtime_paths()
-
-
-def check_auth(auth_header: str) -> bool:
-    if not auth_header or not auth_header.startswith("Basic "):
-        return False
-    try:
-        decoded = base64.b64decode(auth_header.split(" ", 1)[1]).decode("utf-8")
-        user, pw = decoded.split(":", 1)
-        return (user == ADMIN_USER and pw == ADMIN_PASS)
-    except Exception:
-        return False
-
-
-def requires_admin(f):
-    @wraps(f)
-    def wrapper(*args, **kwargs):
-        if check_auth(request.headers.get("Authorization")):
-            return f(*args, **kwargs)
-        # Return a 401 with WWW-Authenticate so the browser re-prompts.
-        # Also disable caching to avoid a stale 401 being reused.
-        body = (
-            "<html><head><title>Authentication required</title></head>"
-            "<body style='font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;'>"
-            "<h3>Authentication required</h3>"
-            "<p>Please enter your admin username/password to continue.</p>"
-            "</body></html>"
-        )
-        return Response(
-            body,
-            401,
-            {
-                "WWW-Authenticate": 'Basic realm="Artifact Admin", charset="UTF-8"',
-                "Cache-Control": "no-store",
-            },
-            mimetype="text/html",
-        )
-
-    return wrapper
-
-
-TAGS = {v: k for k, v in ExifTags.TAGS.items()}
-GPS_TAG_ID = TAGS.get("GPSInfo")
-
-
-def _to_decimal(dms, ref):
-    def _r(v):
-        try:
-            return v[0] / v[1]
-        except Exception:
-            return float(v)
-
-    deg = _r(dms[0]);
-    minutes = _r(dms[1]);
-    seconds = _r(dms[2])
-    val = deg + minutes / 60.0 + seconds / 3600.0
-    if ref in ("S", "W"):
-        val = -val
-    return val
-
-
-def extract_exif_and_autorotate(image_bytes: bytes):
-    img = Image.open(BytesIO(image_bytes))
-    exif_raw = img.info.get("exif", None)
-    exifdata = img.getexif()
-
-    out = {
-        "exif_datetime": None,
-        "exif_make": None,
-        "exif_model": None,
-        "exif_orientation": None,
-    }
-
-    if exifdata:
-        dtid = TAGS.get("DateTimeOriginal") or TAGS.get("DateTime")
-        if dtid and dtid in exifdata:
-            out["exif_datetime"] = str(exifdata.get(dtid))
-        mkid = TAGS.get("Make")
-        mdid = TAGS.get("Model")
-        orid = TAGS.get("Orientation")
-        if mkid and mkid in exifdata:
-            out["exif_make"] = str(exifdata.get(mkid))
-        if mdid and mdid in exifdata:
-            out["exif_model"] = str(exifdata.get(mdid))
-        if orid and orid in exifdata:
-            out["exif_orientation"] = int(exifdata.get(orid))
-
-    gps_lat = gps_lon = gps_alt = None
-    if exifdata and GPS_TAG_ID in exifdata:
-        gps_ifd = exifdata.get(GPS_TAG_ID)
-        try:
-            lat_ref = gps_ifd.get(1)
-            lat = gps_ifd.get(2)
-            lon_ref = gps_ifd.get(3)
-            lon = gps_ifd.get(4)
-            alt = gps_ifd.get(6)
-            if lat and lon and lat_ref and lon_ref:
-                lat_ref = lat_ref.decode() if hasattr(lat_ref, "decode") else lat_ref
-                lon_ref = lon_ref.decode() if hasattr(lon_ref, "decode") else lon_ref
-                gps_lat = _to_decimal(lat, lat_ref)
-                gps_lon = _to_decimal(lon, lon_ref)
-            if alt:
-                gps_alt = (alt[0] / alt[1]) if isinstance(alt, tuple) else float(alt)
-        except Exception:
-            pass
-
-    img = ImageOps.exif_transpose(img)
-    return img, exif_raw, out, gps_lat, gps_lon, gps_alt
-
-
-def resize_if_needed(img):
-    w, h = img.size
-    if max(w, h) <= MAX_DIM:
-        return img, w, h
-    if w >= h:
-        new_w = MAX_DIM
-        new_h = int(h * (MAX_DIM / float(w)))
-    else:
-        new_h = MAX_DIM
-        new_w = int(w * (MAX_DIM / float(h)))
-    return img.resize((new_w, new_h), Image.LANCZOS), new_w, new_h
-
-
-def make_thumbnail(img):
-    thumb = img.copy()
-    thumb.thumbnail((THUMB_DIM, THUMB_DIM), Image.LANCZOS)
-    return thumb
-
-
-def slug(s: str) -> str:
-    s = (s or "").strip()
-    out = []
-    for ch in s:
-        if ch.isalnum() or ch in "-_":
-            out.append(ch)
-        elif ch in " .":
-            out.append("_")
-        else:
-            out.append("_")
-    return "".join(out) or "NA"
-
-
-def _mmddyyyy_from_iso(val: str) -> str:
-    v = (val or "").strip()
-    if not v:
-        return ""
-    # Already MM/DD/YYYY?
-    if re.match(r"^(0[1-9]|1[0-2])/(0[1-9]|[12]\d|3[01])/\d{4}$", v):
-        return v
-    # ISO YYYY-MM-DD
-    m = re.match(r"^(\d{4})-(\d{2})-(\d{2})$", v)
-    if m:
-        y, mo, d = m.group(1), m.group(2), m.group(3)
-        return f"{mo}/{d}/{y}"
-    return v
-
-
-def _normalize_date_input(val: str) -> str:
-    """Parse flexible user-entered dates and store in a single configured format.
-
-    Accepts common inputs such as:
-      - MM/DD/YYYY or M/D/YYYY
-      - YYYY-MM-DD or YYYY/M/D
-      - DD/MM/YYYY (only when unambiguous: day > 12)
-    Stores using DATE_FORMAT (default %Y-%m-%d).
-    """
-    v = (val or "").strip()
-    if not v:
-        return ""
-
-    # Normalize separators
-    vv = re.sub(r"[.\-]", "/", v)
-
-    # Try explicit formats first
-    fmts = [
-        "%m/%d/%Y",
-        "%m/%d/%y",
-        "%Y-%m-%d",
-        "%Y/%m/%d",
-        "%Y/%m/%d",
-        "%Y/%m/%d",
-        "%Y/%m/%d",
-        "%Y/%m/%d",
-        "%Y/%m/%d",
-        "%Y/%m/%d",
-        "%Y/%m/%d",
-    ]
-    # We'll also attempt some relaxed parsing below.
-    from datetime import datetime
-
-    # Allow compact numeric dates: MMDDYY and MMDDYYYY (e.g., 020286 or 02021986)
-    digits = re.sub(r"\D+", "", v)
-    if len(digits) == 8:
-        try:
-            mo = int(digits[0:2]);
-            d = int(digits[2:4]);
-            y = int(digits[4:8])
-            dt = datetime(y, mo, d)
-            return dt.strftime(DATE_FORMAT)
-        except Exception:
-            pass
-    if len(digits) == 6:
-        try:
-            mo = int(digits[0:2]);
-            d = int(digits[2:4]);
-            yy = int(digits[4:6])
-            y = (2000 + yy) if yy <= 49 else (1900 + yy)
-            dt = datetime(y, mo, d)
-            return dt.strftime(DATE_FORMAT)
-        except Exception:
-            pass
-
-    # Direct attempts
-    for fmt in ("%m/%d/%Y", "%m/%d/%y", "%Y-%m-%d", "%Y/%m/%d", "%Y/%m/%-d", "%Y/%-m/%d", "%Y/%-m/%-d"):
-        try:
-            dt = datetime.strptime(v, fmt)
-            return dt.strftime(DATE_FORMAT)
-        except Exception:
-            pass
-
-    # Handle M/D/YYYY without zero padding
-    m = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})$", vv)
-    if m:
-        mo, d, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
-        try:
-            dt = datetime(y, mo, d)
-            return dt.strftime(DATE_FORMAT)
-        except Exception:
-            return v
-
-    # Handle YYYY/M/D
-    m = re.match(r"^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$", v)
-    if m:
-        y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
-        try:
-            dt = datetime(y, mo, d)
-            return dt.strftime(DATE_FORMAT)
-        except Exception:
-            return v
-
-    # Handle DD/MM/YYYY when day is > 12 (avoids ambiguity with MM/DD/YYYY)
-    m = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})$", vv)
-    if m:
-        a, b, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
-        if a > 12 and b <= 12:
-            try:
-                dt = datetime(y, b, a)
-                return dt.strftime(DATE_FORMAT)
-            except Exception:
-                return v
-
-    return v
-
-
-def _normalize_timestamp_input(val: str) -> str:
-    """Parse flexible user-entered datetimes and store in a single configured format.
-
-    Accepts:
-      - YYYY-MM-DD HH:MM[:SS]
-      - YYYY-MM-DDTHH:MM[:SS]
-      - MM/DD/YYYY HH:MM[:SS] (and M/D/YYYY)
-    Stores using TIMESTAMP_FORMAT (default DATE_FORMAT + 'T%H:%M:%S').
-    """
-    v = (val or "").strip()
-    if not v:
-        return ""
-
-    from datetime import datetime
-
-    # Common canonical forms
-    for fmt in (
-            "%Y-%m-%dT%H:%M:%S",
-            "%Y-%m-%dT%H:%M",
-            "%Y-%m-%d %H:%M:%S",
-            "%Y-%m-%d %H:%M",
-            "%m/%d/%Y %H:%M:%S",
-            "%m/%d/%Y %H:%M",
-    ):
-        try:
-            dt = datetime.strptime(v, fmt)
-            return dt.strftime(TIMESTAMP_FORMAT)
-        except Exception:
-            pass
-
-    # Handle M/D/YYYY with times
-    m = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$", v)
-    if m:
-        mo, d, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
-        hh, mm = int(m.group(4)), int(m.group(5))
-        ss = int(m.group(6) or 0)
-        try:
-            dt = datetime(y, mo, d, hh, mm, ss)
-            return dt.strftime(TIMESTAMP_FORMAT)
-        except Exception:
-            return v
-
-    # If it's just a date, normalize as date at midnight
-    d = _normalize_date_input(v)
-    if d and d != v:
-        try:
-            dt = datetime.strptime(d, DATE_FORMAT)
-            return datetime(dt.year, dt.month, dt.day, 0, 0, 0).strftime(TIMESTAMP_FORMAT)
-        except Exception:
-            return v
-
-    return v
-
-
-def _safe_format_filename(fmt: str, meta_values: dict, record_id: int) -> str:
-    """Safely render a filename using a Python format string.
-
-    - Placeholders must match SQL column names from config (e.g. {unit}, {lot}, {record_id}).
-    - All substituted values are slugged for filesystem safety.
-    - Missing placeholders resolve to empty string.
-    """
-    fmt = (fmt or "").strip()
-    if not fmt:
-        return ""
-
-    class _Default(dict):
-        def __missing__(self, key):
-            return ""
-
-    ctx = {k: slug(str(v)) for k, v in (meta_values or {}).items()}
-    ctx.setdefault("record_id", record_id)
-
-    try:
-        out = fmt.format_map(_Default(ctx))
-    except Exception:
-        # Do not crash uploads because of a bad format string.
-        out = fmt
-
-    out = slug(out)
-    out = re.sub(r"_+", "_", out).strip("_")
-    return out
+# Compute result_fields (used by table/grid renderers) from result_rows/layout_rows.
+for _otype, _m in TYPE_META.items():
+    cfg = _m["cfg"] or {}
+    rr = cfg.get("result_rows") or cfg.get("layout_rows") or []
+    if not rr:
+        rr = [[f[1]] for f in (_m.get("input_fields") or []) if len(f) > 1]
+    seen = set()
+    result_fields = []
+    for row in rr:
+        for col in (row or []):
+            if not col:
+                continue
+            if col in seen:
+                continue
+            seen.add(col)
+            # Exclude image/json system columns from the textual table fields
+            if col in ("thumbs_json", "images_json", "webps_json", "json_files_json"):
+                continue
+            if col in ("gps_lat", "gps_lon", "gps_alt", "gps_acc"):
+                continue
+            result_fields.append(col)
+    _m["result_fields"] = result_fields
+
+
+
+# -----------------------------------------------------------------------------
+# Flask app + template globals
+# -----------------------------------------------------------------------------
+
+app = Flask(__name__, root_path=str(APP_ROOT))
+app.secret_key = APP_SECRET
+
+app.jinja_env.filters["fromjson"] = lambda s: json.loads(s) if s else []
 
 
 def maps_links(lat, lon):
     if lat is None or lon is None:
         return None, None
-    osm = (
-        f"https://www.openstreetmap.org/?mlat={lat:.6f}&mlon={lon:.6f}"
-        f"#map=18/{lat:.6f}/{lon:.6f}"
-    )
+    osm = f"https://www.openstreetmap.org/?mlat={lat:.6f}&mlon={lon:.6f}#map=18/{lat:.6f}/{lon:.6f}"
     gmaps = f"https://www.google.com/maps?q={lat:.6f},{lon:.6f}"
     return osm, gmaps
 
 
 app.jinja_env.globals["maps_links"] = maps_links
-app.jinja_env.filters["fromjson"] = lambda s: json.loads(s) if s else []
 
 
-@app.route("/favicon.ico")
-def favicon():
-    return send_from_directory(
-        app.static_folder,
-        "favicon.ico",
-        mimetype="image/vnd.microsoft.icon",
-    )
+def make_banner_title(title: str | None) -> str:
+    return title or ""
 
 
-@app.route("/", methods=["GET"])
+def _nav_links(active: str):
+    # Only 3 navlinks are public
+    return [
+        {"label": "Upload", "url": url_for("form"), "active": active == "upload"},
+        {"label": "Browse", "url": url_for("browse"), "active": active == "browse"},
+        {"label": "Info", "url": url_for("info"), "active": active == "info"},
+    ]
+
+
+@app.context_processor
+def inject_globals():
+    return {
+        "APP_BRAND": APP_BRAND,
+        "APP_SUBTITLE": APP_SUBTITLE,
+        "APP_LOGO": APP_LOGO,
+        "ADMIN_LABEL": ADMIN_LABEL,
+        "DATE_FORMAT": DATE_FORMAT,
+        "TIMESTAMP_FORMAT": TIMESTAMP_FORMAT,
+        "BANNER_BG": BANNER_BG,
+        "BANNER_FG": BANNER_FG,
+        "BANNER_ACCENT": BANNER_ACCENT,
+        "SHOW_LOGO": SHOW_LOGO,
+        "OBJECT_TYPES": TYPE_META,
+        "TYPE_META": TYPE_META,
+        "GPS_ENABLED": GPS_ENABLED,
+        "grid_max_width": GRID_MAX_WIDTH,
+    }
+
+
+# -----------------------------------------------------------------------------
+# DB
+# -----------------------------------------------------------------------------
+
+def get_db() -> sqlite3.Connection:
+    if "db" not in g:
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(DB_PATH))
+        conn.row_factory = sqlite3.Row
+        g.db = conn
+    return g.db
+
+
+@app.teardown_appcontext
+def _close_db(exc):
+    conn = g.pop("db", None)
+    if conn is not None:
+        conn.close()
+
+
+def init_db():
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    def _table_columns(table: str) -> set[str]:
+        try:
+            rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+            return {r[1] for r in rows}
+        except Exception:
+            return set()
+
+    def _ensure_column(table: str, col: str, decl: str):
+        existing = _table_columns(table)
+        if col in existing:
+            return
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {decl}")
+
+    conn = get_db()
+    for otype, meta in TYPE_META.items():
+        # Build the canonical schema for every table.
+        # IMPORTANT: GPS columns must *always* exist so databases can be
+        # imported/exported between GPS-enabled and non-GPS builds.
+        cols = []
+        cols.append("id INTEGER PRIMARY KEY AUTOINCREMENT")
+        cols += [
+            "gps_lat REAL",
+            "gps_lon REAL",
+            "gps_alt REAL",
+            "gps_acc REAL",
+            "thumbs_json TEXT",
+            "images_json TEXT",
+            "webps_json TEXT",
+            "json_files_json TEXT",
+            "date_last_saved TEXT",
+        ]
+
+        for col, fm in meta["field_meta"].items():
+            if col in SYSTEM_COLUMNS:
+                # keep schema compatibility; these may appear in input_fields but are server-managed
+                if col == "date_recorded":
+                    cols.append("date_recorded TEXT")
+                elif col == "date_updated":
+                    cols.append("date_updated TEXT")
+                continue
+            cols.append(f'"{col}" {fm["sqlite_type"]}')
+
+        ddl = f"CREATE TABLE IF NOT EXISTS {otype} ({', '.join(cols)})"
+        conn.execute(ddl)
+
+        # Lightweight migration: if the table already exists, add any missing
+        # columns (e.g., when GPS columns were previously omitted).
+        existing = _table_columns(otype)
+        if existing:
+            for decl in cols[1:]:  # skip id
+                # decl can be like: gps_lat REAL or "col" TEXT
+                m = re.match(r'^"?([A-Za-z0-9_]+)"?\s+.+$', decl)
+                if not m:
+                    continue
+                c = m.group(1)
+                if c not in existing:
+                    _ensure_column(otype, c, decl)
+
+    conn.commit()
+
+
+@app.before_request
+def _ensure_db():
+    init_db()
+
+
+# -----------------------------------------------------------------------------
+# Auth (kept for hidden Account functionality)
+# -----------------------------------------------------------------------------
+
+def is_logged_in() -> bool:
+    return session.get("is_admin") is True
+
+
+def require_login(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if not is_logged_in():
+            return redirect(url_for("account", next=request.path))
+        return fn(*args, **kwargs)
+    return wrapper
+
+
+@app.route("/account", methods=["GET", "POST"])
+def account():
+    # Hidden tab; route retained
+    if request.method == "POST":
+        u = (request.form.get("username") or "").strip()
+        p = (request.form.get("password") or "").strip()
+        if u == ADMIN_USER and p == ADMIN_PASS:
+            session["is_admin"] = True
+            flash("Logged in.")
+            nxt = request.args.get("next") or url_for("browse")
+            return redirect(nxt)
+        flash("Invalid credentials.")
+    return render_template("user.html", NAV_LINKS=_nav_links(active=""), banner_title="Account")
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    flash("Logged out.")
+    return redirect(url_for("browse"))
+
+
+# -----------------------------------------------------------------------------
+# Date handling (simplified)
+# -----------------------------------------------------------------------------
+
+_DIGITS_ONLY = re.compile(r"^\d{6,8}$")
+
+
+def parse_user_date(raw: str) -> str | None:
+    """Accepts flexible user date input; returns ISO date (YYYY-MM-DD) or None.
+
+    Heuristics:
+      - 6 digits: DDMMYY (e.g. 020286 -> 1986-02-02)
+      - 8 digits: DDMMYYYY
+      - otherwise: dateutil parser with dayfirst=True
+    """
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s:
+        return None
+
+    if _DIGITS_ONLY.match(s):
+        if len(s) == 6:
+            dd, mm, yy = int(s[0:2]), int(s[2:4]), int(s[4:6])
+            year = 1900 + yy if yy >= 50 else 2000 + yy
+            return date(year, mm, dd).isoformat()
+        if len(s) == 8:
+            dd, mm, yyyy = int(s[0:2]), int(s[2:4]), int(s[4:8])
+            return date(yyyy, mm, dd).isoformat()
+
+    # "reasonable formats"
+    dt = dtparser.parse(s, dayfirst=True, yearfirst=False, fuzzy=True, default=datetime(2000, 1, 1))
+    return dt.date().isoformat()
+
+
+def now_timestamp() -> str:
+    return datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+
+
+# -----------------------------------------------------------------------------
+# Images + EXIF + GPS (carried over, but lightly simplified)
+# -----------------------------------------------------------------------------
+
+_EXIF_TAGS = {v: k for k, v in ExifTags.TAGS.items()}
+
+
+def _save_derivatives(img: Image.Image, stem: str) -> tuple[str, str, str]:
+    """Save main JPG, WEBP, and thumbnail JPG. Returns (jpg, webp, thumb) basenames."""
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+    # normalize orientation
+    img = ImageOps.exif_transpose(img)
+
+    # scale down large images
+    img = img.convert("RGB")
+    w, h = img.size
+    if max(w, h) > MAX_DIM:
+        scale = MAX_DIM / float(max(w, h))
+        img = img.resize((int(w * scale), int(h * scale)))
+
+    jpg_name = f"{stem}.jpg"
+    webp_name = f"{stem}.webp"
+    thumb_name = f"{stem}.thumb.jpg"
+
+    jpg_path = UPLOAD_DIR / jpg_name
+    webp_path = UPLOAD_DIR / webp_name
+    thumb_path = UPLOAD_DIR / thumb_name
+
+    img.save(jpg_path, format="JPEG", quality=JPEG_QUALITY, optimize=True)
+
+    try:
+        img.save(webp_path, format="WEBP", quality=WEBP_QUALITY, method=6)
+    except Exception:
+        # WEBP is optional
+        webp_name = ""
+
+    # thumbnail
+    t = img.copy()
+    t.thumbnail((THUMB_DIM, THUMB_DIM))
+    t.save(thumb_path, format="JPEG", quality=85, optimize=True)
+
+    return jpg_name, webp_name, thumb_name
+
+
+def _exif_gps_from_pil(img: Image.Image):
+    """Return (lat, lon, alt, acc) where acc is unknown (None)."""
+    try:
+        exif = img.getexif()
+        if not exif:
+            return None, None, None, None
+        gps_info = exif.get(_EXIF_TAGS.get("GPSInfo"))
+        if not gps_info:
+            return None, None, None, None
+
+        def _ratio_to_float(x):
+            try:
+                return float(x[0]) / float(x[1])
+            except Exception:
+                return float(x)
+
+        def _dms_to_deg(dms, ref):
+            d = _ratio_to_float(dms[0])
+            m = _ratio_to_float(dms[1])
+            s = _ratio_to_float(dms[2])
+            deg = d + (m / 60.0) + (s / 3600.0)
+            if ref in ("S", "W"):
+                deg = -deg
+            return deg
+
+        lat = lon = alt = None
+        if 2 in gps_info and 1 in gps_info:  # GPSLatitude + ref
+            lat = _dms_to_deg(gps_info[2], gps_info[1])
+        if 4 in gps_info and 3 in gps_info:  # GPSLongitude + ref
+            lon = _dms_to_deg(gps_info[4], gps_info[3])
+        if 6 in gps_info:
+            alt = _ratio_to_float(gps_info[6])
+        return lat, lon, alt, None
+    except Exception:
+        return None, None, None, None
+
+
+# -----------------------------------------------------------------------------
+# Upload (unchanged UX): /upload + /submit + /exists
+# -----------------------------------------------------------------------------
+
+@app.route("/")
+def root():
+    return redirect(url_for("form"))
+
+
+@app.route("/upload", methods=["GET"])
+@app.route("/form", methods=["GET"])
 def form():
     last_id = request.args.get("last_id", type=int)
     last_type = request.args.get("last_type", type=str)
@@ -862,708 +521,275 @@ def form():
     last_meta = None
     if last_id and last_type and last_type in TYPE_META:
         with get_db() as conn:
-            last_row = conn.execute(
-                f"SELECT * FROM {last_type} WHERE id=?", (last_id,)
-            ).fetchone()
+            last_row = conn.execute(f"SELECT * FROM {last_type} WHERE id=?", (last_id,)).fetchone()
             last_meta = TYPE_META[last_type]
-    # Default selected tab
+
     selected = request.args.get("type") or (last_type if last_type in TYPE_META else None)
     if selected not in TYPE_META:
         selected = next(iter(TYPE_META.keys()))
     g.current_type = selected
-    prefill_by_type = session.get('prefill_by_type', {})
-    return render_template("upload.html",
-                           last_row=last_row, last_type=last_type, last_meta=last_meta,
-                           selected_type=selected,
-                           banner_title=make_banner_title(selected.capitalize()),
-                           prefill_by_type=prefill_by_type,
-                           current_record_by_type=session.get('current_record_by_type', {}))
 
+    prefill_by_type = session.get("prefill_by_type", {})
+    current_record_by_type = session.get("current_record_by_type", {})
 
-def _apply_postprocess_values(otype: str, values: dict) -> dict:
-    """Optional post-processing hook.
-    It should return a dict (may be the same object) containing values compatible
-    with the database schema. Unknown keys are dropped.
-    """
-
-    def extract_values(otype, dico):
-        context = dico['context']
-        parts = context.split(',')
-        if len(parts) < 3:
-            raise TypeError("need 3 and only 3 comma-separated values for context: Unit,Area,Level")
-        dico['excavation_unit'] = parts[0].upper().strip()
-        dico['area'] = parts[1].upper().strip()
-        dico['level'] = parts[2].upper().strip()
-        return dico
-
-    out = extract_values(otype, dict(values))
-
-    if not isinstance(out, dict):
-        raise TypeError("postprocess_values must return a dict (or None)")
-
-    allowed = set(TYPE_META.get(otype, {}).get("field_meta", {}).keys())
-    cleaned = {}
-    for k in allowed:
-        cleaned[k] = out.get(k)
-    return cleaned
+    return render_template(
+        "upload.html",
+        last_row=last_row, last_type=last_type, last_meta=last_meta,
+        selected_type=selected,
+        banner_title=make_banner_title(selected.capitalize()),
+        NAV_LINKS=_nav_links(active="upload"),
+        prefill_by_type=prefill_by_type,
+        current_record_by_type=current_record_by_type,
+    )
 
 
 @app.route("/exists", methods=["POST"])
 def exists():
-    """Return whether a record exists for the current metadata values.
-
-    Returns JSON: {exists: bool, id: int|null}
-    """
     otype = (request.form.get("object_type") or "").strip().lower()
     if otype not in TYPE_META:
         return jsonify({"exists": False, "id": None})
 
     meta = TYPE_META[otype]
 
-    # Coerce values the same way as /submit does (but without requiring a photo).
-    meta_values = {}
-    ts = int(time.time())
-    now = __import__("datetime").datetime.fromtimestamp(ts)
-    ts_str = now.strftime(TIMESTAMP_FORMAT)
+    meta_values = _coerce_form_values(meta, request.form, allow_missing=True)
+    # remove server-managed timestamps from match key
+    for k, fm in meta["field_meta"].items():
+        if fm.get("server_now"):
+            meta_values.pop(k, None)
+
+    # Build a deterministic matching WHERE: all provided non-empty fields must match
+    where = []
+    params = []
+    for col, v in meta_values.items():
+        if v is None or str(v).strip() == "":
+            continue
+        where.append(f'"{col}" = ?')
+        params.append(v)
+
+    if not where:
+        return jsonify({"exists": False, "id": None})
+
+    sql = f"SELECT id FROM {otype} WHERE " + " AND ".join(where) + " ORDER BY id DESC LIMIT 1"
+    row = get_db().execute(sql, params).fetchone()
+    return jsonify({"exists": row is not None, "id": int(row["id"]) if row else None})
+
+
+def _coerce_form_values(meta: dict, form, allow_missing: bool = False) -> dict:
+    out = {}
+    now_ts = now_timestamp()
 
     for fdef in meta["input_fields"]:
         _label, col, coltype = fdef[0], fdef[1], (fdef[2] if len(fdef) > 2 else "TEXT")
-        t = (str(coltype or "TEXT")).upper().strip()
         fm = meta["field_meta"].get(col, {})
+        t = str(coltype or "TEXT").strip().upper()
 
-        if t == "CONSTANT" or fm.get("widget") == "constant":
-            meta_values[col] = str(fm.get("constant_value") or "")
+        if fm.get("widget") == "constant":
+            out[col] = str(fm.get("constant_value") or "")
             continue
 
         if fm.get("widget") == "radio":
-            selected = [str(v).strip() for v in request.form.getlist(col) if str(v).strip()]
-            meta_values[col] = json.dumps(selected, ensure_ascii=False, separators=(",", ":")) if selected else None
+            selected = [str(v).strip() for v in form.getlist(col) if str(v).strip()]
+            out[col] = json.dumps(selected, ensure_ascii=False, separators=(",", ":")) if selected else (None if allow_missing else "")
             continue
 
-        # Server-managed timestamp/date (e.g., date_last_saved)
-
-        if fm.get('server_now'):
-            from datetime import datetime
-
-            now = datetime.now()
-
-            meta_values[col] = now.strftime(DATE_FORMAT) if t == 'DATE' else now.strftime(TIMESTAMP_FORMAT)
-
+        raw = form.get(col)
+        if raw is None and allow_missing:
             continue
 
-        raw = (request.form.get(col) or "").strip()
-        if fm.get("widget") == "uppercase" and raw:
-            raw = raw.upper()
-
-        if not raw:
-            meta_values[col] = None
+        s = (raw or "").strip()
+        if not s:
+            out[col] = None
             continue
 
-        if t.startswith("INT"):
-            try:
-                meta_values[col] = int(raw)
-            except ValueError:
-                meta_values[col] = None
-        elif t.startswith("FLOAT") or t.startswith("REAL") or t.startswith("DOUBLE"):
-            try:
-                meta_values[col] = float(raw)
-            except ValueError:
-                meta_values[col] = None
-        elif t == "DATE":
-            meta_values[col] = _normalize_date_input(raw)
+        if t == "DATE":
+            out[col] = parse_user_date(s)
         elif t == "TIMESTAMP":
-            meta_values[col] = _normalize_timestamp_input(raw)
+            # Users shouldn't need to enter timestamps; accept but coerce to ISO date-only if they do.
+            out[col] = parse_user_date(s) + "T00:00:00"
+        elif fm.get("widget") == "uppercase" or t == "UPPERCASE":
+            out[col] = s.upper()
         else:
-            meta_values[col] = raw
+            out[col] = s
 
-    # Optional server-side postprocessing; on failure, return the values to the client
-    # and ask them to correct.
-    try:
-        meta_values = _apply_postprocess_values(otype, meta_values)
-    except Exception:
-        flash("post processing failed, please correct.")
-        try:
-            prefill_by_type = session.get('prefill_by_type', {}) or {}
-            prefill_by_type[otype] = dict(meta_values)
-            session['prefill_by_type'] = prefill_by_type
-        except Exception:
-            pass
-        return redirect(url_for('form', type=otype))
+        if fm.get("server_now"):
+            out[col] = now_ts
 
-    signature_values = {}
-    for fdef in meta["input_fields"]:
-        col, coltype = fdef[1], (fdef[2] if len(fdef) > 2 else "TEXT")
-        t = (str(coltype or "TEXT")).upper().strip()
-        if t.startswith("TIMESTAMP"):
-            continue
-        signature_values[col] = meta_values.get(col)
-
-    meta_signature = json.dumps(signature_values, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-
-    with get_db() as conn:
-        row = conn.execute(
-            f"SELECT id FROM {otype} WHERE meta_signature=? ORDER BY id DESC LIMIT 1",
-            (meta_signature,),
-        ).fetchone()
-
-    if row:
-        return jsonify({"exists": True, "id": int(row["id"])})
-    return jsonify({"exists": False, "id": None})
+    return out
 
 
 @app.route("/submit", methods=["POST"])
 def submit():
+    """Create (or duplicate) a new record and/or add an image to the current record (unchanged UX)."""
     otype = (request.form.get("object_type") or "").strip().lower()
     if otype not in TYPE_META:
         flash("Unknown object type.")
         return redirect(url_for("form"))
+
     meta = TYPE_META[otype]
-    # submit_mode may be supplied by either a submit button (name/value) or a hidden input.
-    submit_mode = (request.form.get("submit_mode") or "image").strip().lower()
+
+    # Coerce form values
+    values = _coerce_form_values(meta, request.form, allow_missing=False)
+
+    # If GPS is enabled, accept gps_ fields from form OR EXIF
+    gps_lat = request.form.get("gps_lat", type=float)
+    gps_lon = request.form.get("gps_lon", type=float)
+    gps_alt = request.form.get("gps_alt", type=float)
+    gps_acc = request.form.get("gps_acc", type=float)
+
+    # Button routing (matches existing upload template)
     action = (request.form.get("action") or "").strip().lower()
-    ts = int(time.time())
-    now = __import__("datetime").datetime.fromtimestamp(ts)
-    ts_str = now.strftime(TIMESTAMP_FORMAT)
 
-    # Coerce metadata values from request.form according to config.
-    meta_values = {}
+    photo = request.files.get("photo")
 
-    for fdef in meta["input_fields"]:
-        _label, col, coltype = fdef[0], fdef[1], (fdef[2] if len(fdef) > 2 else "TEXT")
-        t = (str(coltype or "TEXT")).upper().strip()
-        fm = meta["field_meta"].get(col, {})
+    # Create a new record row first (New Record)
+    if action in ("new", "new_record", "newrecord", "metadata", "upload metadata"):
+        rid = _insert_record_only(otype, meta, values, gps_lat, gps_lon, gps_alt, gps_acc)
+        session.setdefault("current_record_by_type", {})[otype] = rid
+        flash(f"Saved {meta['label']} ID {rid}")
+        return redirect(url_for("form", last_id=rid, last_type=otype, type=otype))
 
-        # CONSTANT fields are server-controlled (clients may submit, but we overwrite).
-        if t == "CONSTANT" or fm.get("widget") == "constant":
-            meta_values[col] = str(fm.get("constant_value") or "")
-            continue
+    # Add image (may create record if needed)
+    if action in ("add", "add_image", "add image", "upload image"):
+        rid = session.get("current_record_by_type", {}).get(otype)
+        if not rid:
+            rid = _insert_record_only(otype, meta, values, gps_lat, gps_lon, gps_alt, gps_acc)
+            session.setdefault("current_record_by_type", {})[otype] = rid
 
-        # RADIO fields are multi-select (0+), stored as a JSON list in a TEXT column.
-        if fm.get("widget") == "radio":
-            selected = [str(v).strip() for v in request.form.getlist(col) if str(v).strip()]
-            if selected:
-                meta_values[col] = json.dumps(selected, ensure_ascii=False, separators=(",", ":"))
-            else:
-                meta_values[col] = None
-            continue
+        if not photo or not getattr(photo, "filename", ""):
+            flash("No image selected.")
+            return redirect(url_for("form", last_id=rid, last_type=otype, type=otype))
 
-        # Server-managed timestamp/date (e.g., date_last_saved)
+        _attach_image(otype, rid, photo, gps_lat, gps_lon, gps_alt, gps_acc)
+        flash(f"Added image to {meta['label']} ID {rid}")
+        return redirect(url_for("form", last_id=rid, last_type=otype, type=otype))
 
-        if fm.get('server_now'):
-            from datetime import datetime
+    # Update metadata for the current record (Upload tab behavior)
+    if action in ("update_record", "update"):
+        rid = session.get("current_record_by_type", {}).get(otype)
+        if not rid:
+            rid = _insert_record_only(otype, meta, values, gps_lat, gps_lon, gps_alt, gps_acc)
+            session.setdefault("current_record_by_type", {})[otype] = rid
 
-            now = datetime.now()
-
-            meta_values[col] = now.strftime(DATE_FORMAT) if t == 'DATE' else now.strftime(TIMESTAMP_FORMAT)
-
-            continue
-
-        raw = (request.form.get(col) or "").strip()
-        if fm.get("widget") == "uppercase" and raw:
-            raw = raw.upper()
-
-        if not raw:
-            meta_values[col] = None
-            continue
-
-        if t.startswith("INT"):
-            try:
-                meta_values[col] = int(raw)
-            except ValueError:
-                meta_values[col] = None
-        elif t.startswith("FLOAT") or t.startswith("REAL") or t.startswith("DOUBLE"):
-            try:
-                meta_values[col] = float(raw)
-            except ValueError:
-                meta_values[col] = None
-        elif t == 'DATE':
-            meta_values[col] = _normalize_date_input(raw)
-        elif t == 'TIMESTAMP':
-            meta_values[col] = _normalize_timestamp_input(raw)
-        else:
-            meta_values[col] = raw
-
-    # Remember the user's most recent inputs per object type (for POST-to-POST continuity).
-    # Do this BEFORE post-processing so that even if post-processing fails we can
-    # return the form with the user's inputs intact.
-    prefill_by_type = session.get('prefill_by_type', {})
-    prefill = {}
-    for fdef in meta['input_fields']:
-        col = fdef[1]
-        fm = meta['field_meta'].get(col, {})
-        if fm.get('widget') == 'radio':
-            prefill[col] = [str(v).strip() for v in request.form.getlist(col) if str(v).strip()]
-        elif fm.get('widget') == 'constant':
-            prefill[col] = str(fm.get('constant_value') or '')
-        else:
-            prefill[col] = request.form.get(col, '')
-    prefill_by_type[otype] = prefill
-    session['prefill_by_type'] = prefill_by_type
-
-    # Allow optional post-processing of the collected form values.
-    try:
-        meta_values = _apply_postprocess_values(otype, meta_values)
-    except Exception:
-        flash('post processing failed, please correct.')
-        return redirect(url_for('form', type=otype))
-
-    # Record matching signature: use non-timestamp values only.
-    signature_values = {}
-    for fdef in meta["input_fields"]:
-        col, coltype = fdef[1], (fdef[2] if len(fdef) > 2 else "TEXT")
-        t = (str(coltype or "TEXT")).upper().strip()
-        if t.startswith("TIMESTAMP"):
-            continue
-        signature_values[col] = meta_values.get(col)
-    for col in meta["required_fields"]:
-        if not meta_values.get(col):
-            label = meta["field_meta"].get(col, {}).get("label", col.replace("_", " ").title())
-            flash(f"Please fill in required field: {label}.")
-            return redirect(url_for("form", type=otype))
-
-    # GPS handling: we still accept browser GPS as a fallback when EXIF has none.
-    require_gps = False
-    if GPS_ENABLED:
-        require_gps = request.form.get("require_gps") == "on"
-
-    # Metadata-only submission (New Record / Update Record)
-    if submit_mode == "metadata":
-        meta_signature = json.dumps(signature_values, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-        meta_cols = [fdef[1] for fdef in meta["input_fields"]]
-        current_by_type = session.get('current_record_by_type', {})
-
-        with get_db() as conn:
-            if action == 'update_record':
-                rid = current_by_type.get(otype)
-                if not rid:
-                    flash('No current record to update. Click New Record first.')
-                    return redirect(url_for('form', type=otype))
-
-                sets = ",".join(
-                    [f"{c}=?" for c in meta_cols] + ["meta_signature=?", "timestamp=?", "date_last_saved=?"] + (
-                        ["date_updated=?"] if meta.get('field_meta', {}).get('date_updated', {}).get(
-                            'server_now') else []))
-                vals = [meta_values.get(c) for c in meta_cols] + [meta_signature, ts,
-                                                                  now.strftime(TIMESTAMP_FORMAT)] + (
-                           [now.strftime(TIMESTAMP_FORMAT)] if meta.get('field_meta', {}).get('date_updated', {}).get(
-                               'server_now') else [])
-                conn.execute(f"UPDATE {otype} SET {sets} WHERE id=?", vals + [rid])
-                flash(f"Record {rid} updated.")
-                return redirect(url_for('form', type=otype, last_id=rid, last_type=otype))
-
-            # Default (and 'new_record'): always insert a fresh row
-            db_cols = meta_cols + ["meta_signature", "images_json", "thumbs_json", "webps_json", "json_files_json",
-                                   "timestamp", "date_last_saved"] + (
-                          ["date_updated"] if meta.get('field_meta', {}).get('date_updated', {}).get(
-                              'server_now') else [])
-            vals = [meta_values.get(c) for c in meta_cols] + [
-                meta_signature,
-                json.dumps([]), json.dumps([]), json.dumps([]), json.dumps([]),
-                ts,
-                now.strftime(TIMESTAMP_FORMAT),
-            ] + ([now.strftime(TIMESTAMP_FORMAT)] if meta.get('field_meta', {}).get('date_updated', {}).get(
-                'server_now') else [])
-            placeholders = ",".join(["?"] * len(db_cols))
-            cur = conn.execute(f"INSERT INTO {otype} ({','.join(db_cols)}) VALUES ({placeholders})", vals)
-            rid = int(cur.lastrowid)
-
-        current_by_type[otype] = rid
-        session['current_record_by_type'] = current_by_type
-        flash(f"New record created: {rid}.")
-        return redirect(url_for('form', type=otype, last_id=rid, last_type=otype))
-
-    f = request.files.get("photo")
-    if not f or f.filename == "":
-        flash("Please take or choose a photo.")
-        return redirect(url_for("form", type=otype))
-
-    ip = request.headers.get("X-Forwarded-For", request.remote_addr)
-    ua = request.headers.get("User-Agent", "")
-
-    data = f.read()
-    img, exif_raw, exif_small, gps_lat, gps_lon, gps_alt = extract_exif_and_autorotate(data)
-
-    if GPS_ENABLED:
-        try:
-            if gps_lat is None or gps_lon is None:
-                form_lat = request.form.get("gps_lat")
-                form_lon = request.form.get("gps_lon")
-                if form_lat and form_lon:
-                    gps_lat = float(form_lat)
-                    gps_lon = float(form_lon)
-                    gps_alt = None
-        except Exception:
-            pass
-        if require_gps and (gps_lat is None or gps_lon is None):
-            flash(
-                "GPS is required, but no GPS was found in EXIF or browser location. "
-                "Please enable location and try again."
-            )
-            return redirect(url_for("form", type=otype))
-
-    img, width, height = resize_if_needed(img)
-    thumb = make_thumbnail(img)
-
-    exif_datetime = exif_small["exif_datetime"]
-    exif_make = exif_small["exif_make"]
-    exif_model = exif_small["exif_model"]
-    exif_orientation = exif_small["exif_orientation"]
-
-    meta_signature = json.dumps(signature_values, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-
-    def _load_list(val):
-        if not val:
-            return []
-        try:
-            x = json.loads(val)
-            return x if isinstance(x, list) else []
-        except Exception:
-            return []
-
-    def _make_base(record_id: int) -> str:
-        fmt = (meta.get("filename_format") or "").strip()
-        out = _safe_format_filename(fmt, meta_values, record_id)
-        if out:
-            return out
-        # If no format is provided, fall back to a simple deterministic name.
-        return slug(f"{otype.upper()}_ID{record_id}")
-
-    with get_db() as conn:
-        # Prefer the current record (created by New Record) when it matches the current form values.
-        row = None
-        current_by_type = session.get('current_record_by_type', {})
-        cur_id = current_by_type.get(otype)
-        if cur_id:
-            try:
-                cand = conn.execute(f"SELECT * FROM {otype} WHERE id=?", (cur_id,)).fetchone()
-                if cand and cand['meta_signature'] == meta_signature:
-                    row = cand
-            except Exception:
-                row = None
-
-        # Otherwise, try to match an existing record by metadata signature.
-        if row is None:
-            row = conn.execute(
-                f"SELECT * FROM {otype} WHERE meta_signature=? ORDER BY id DESC LIMIT 1",
-                (meta_signature,),
-            ).fetchone()
-
-        if row:
-            record_id = int(row["id"])
-            images = _load_list(row["images_json"])
-            thumbs = _load_list(row["thumbs_json"])
-            webps = _load_list(row["webps_json"])
-            jfiles = _load_list(row["json_files_json"])
-        else:
-            # Create a new record first.
-            meta_cols = [f[1] for f in meta["input_fields"]]
-            db_cols = meta_cols + [
-                "meta_signature",
-                "images_json", "thumbs_json", "webps_json", "json_files_json",
-                "width", "height", "timestamp", "ip", "user_agent",
-                "exif_datetime", "exif_make", "exif_model", "exif_orientation",
-                "gps_lat", "gps_lon", "gps_alt",
-            ]
-            values = [meta_values.get(c) for c in meta_cols] + [
-                meta_signature,
-                json.dumps([]), json.dumps([]), json.dumps([]), json.dumps([]),
-                width, height, ts, ip, ua,
-                exif_datetime, exif_make, exif_model, exif_orientation,
-                gps_lat, gps_lon, gps_alt,
-            ]
-            placeholders = ",".join(["?"] * len(db_cols))
-            cur = conn.execute(
-                f"INSERT INTO {otype} ({','.join(db_cols)}) VALUES ({placeholders})",
-                values,
-            )
-            record_id = cur.lastrowid
-            images, thumbs, webps, jfiles = [], [], [], []
-
-        # Remember / update current record for this object type
-        try:
-            current_by_type = session.get('current_record_by_type', {})
-            current_by_type[otype] = int(record_id)
-            session['current_record_by_type'] = current_by_type
-        except Exception:
-            pass
-
-        img_idx = len(images) + 1
-        base = _make_base(record_id) + f"_IMG{img_idx}"
-        jpg_name = f"{base}.jpg"
-        thumb_name = f"{base}_thumb.jpg"
-        webp_name = f"{base}.webp"
-        json_name = f"{base}.json"
-
-        save_kwargs = {"format": "JPEG", "quality": JPEG_QUALITY}
-        if exif_raw:
-            save_kwargs["exif"] = exif_raw
-        img.convert("RGB").save(UPLOAD_DIR / jpg_name, **save_kwargs)
-        thumb.convert("RGB").save(UPLOAD_DIR / thumb_name, format="JPEG", quality=85)
-        img.save(UPLOAD_DIR / webp_name, "WEBP", quality=WEBP_QUALITY, method=6)
-
-        # Per-image JSON sidecar (one file per captured image)
-        json_payload = {
-            "object_type": otype,
-            "record_id": record_id,
-            "image_index": img_idx,
-            "filename_base": base,
-            "filename": jpg_name,
-            "thumb_filename": thumb_name,
-            "webp_filename": webp_name,
-            "timestamp": ts,
-            "client_ip": ip,
-            "user_agent": ua,
-            "gps": {"lat": gps_lat, "lon": gps_lon, "alt": gps_alt},
-            "exif": {
-                "datetime": exif_datetime,
-                "make": exif_make,
-                "model": exif_model,
-                "orientation": exif_orientation,
-            },
-            "fields": meta_values,
-        }
-        # Append new files to the record lists first so we can embed the full list
-        # in both the record-level JSON and the per-image JSON (useful for downstream tooling).
-        images.append(jpg_name)
-        thumbs.append(thumb_name)
-        webps.append(webp_name)
-        jfiles.append(json_name)
-
-        # Embed the full record image lists into the per-image JSON sidecar.
-        json_payload["record_images"] = list(images)
-        json_payload["record_thumbs"] = list(thumbs)
-        json_payload["record_webps"] = list(webps)
-        json_payload["record_image_json_files"] = list(jfiles)
-
-        (UPLOAD_DIR / json_name).write_text(json.dumps(json_payload, indent=2), encoding="utf-8")
-
-        # Record-level JSON sidecar (one file per record, updated on every capture)
-        record_json_name = f"{_make_base(record_id)}_record.json"
-        record_payload = {
-            "object_type": otype,
-            "record_id": record_id,
-            "timestamp": ts,
-            "client_ip": ip,
-            "user_agent": ua,
-            "gps": {"lat": gps_lat, "lon": gps_lon, "alt": gps_alt},
-            "exif": {
-                "datetime": exif_datetime,
-                "make": exif_make,
-                "model": exif_model,
-                "orientation": exif_orientation,
-            },
-            "fields": meta_values,
-            "images": list(images),
-            "thumbs": list(thumbs),
-            "webps": list(webps),
-            "image_json_files": list(jfiles),
-        }
-        (UPLOAD_DIR / record_json_name).write_text(json.dumps(record_payload, indent=2), encoding="utf-8")
-
-        # Record-level JSON sidecar (updated on every submission; includes ALL images)
-        record_json_name = f"{_make_base(record_id)}_record.json"
-        record_payload = {
-            "object_type": otype,
-            "record_id": record_id,
-            "timestamp": ts,
-            "client_ip": ip,
-            "user_agent": ua,
-            "gps": {"lat": gps_lat, "lon": gps_lon, "alt": gps_alt},
-            "exif": {
-                "datetime": exif_datetime,
-                "make": exif_make,
-                "model": exif_model,
-                "orientation": exif_orientation,
-            },
-            "fields": meta_values,
-            "images": images,
-            "thumbs": thumbs,
-            "webps": webps,
-            "image_json_files": jfiles,
-        }
-        (UPLOAD_DIR / record_json_name).write_text(
-            json.dumps(record_payload, indent=2),
-            encoding="utf-8",
-        )
-        # Update record with new image lists and latest capture context.
-        # Always bump date_last_saved; bump date_updated if configured (TIMESTAMP + field name date_updated).
-        from datetime import datetime
-        now2 = datetime.now()
-        dls = now2.strftime(TIMESTAMP_FORMAT)
-        du_sql = ''
-        du_val = None
-        if meta.get('field_meta', {}).get('date_updated', {}).get('server_now'):
-            du_sql = 'date_updated=?, '
-            du_val = now2.strftime(TIMESTAMP_FORMAT)
-
-        sql = (
-            f"UPDATE {otype} SET {du_sql}date_last_saved=?, images_json=?, thumbs_json=?, webps_json=?, json_files_json=?, "
-            "width=?, height=?, timestamp=?, ip=?, user_agent=?, exif_datetime=?, exif_make=?, exif_model=?, exif_orientation=?, gps_lat=?, gps_lon=?, gps_alt=? "
-            "WHERE id=?"
-        )
+        conn = get_db()
+        sets = []
         params = []
-        if du_sql:
-            params.append(du_val)
-        params.append(dls)
-        params += [
-            json.dumps(images), json.dumps(thumbs), json.dumps(webps), json.dumps(jfiles),
-            width, height, ts, ip, ua,
-            exif_datetime, exif_make, exif_model, exif_orientation,
-            gps_lat, gps_lon, gps_alt,
-            record_id,
-        ]
+        for col, v in values.items():
+            if col in SYSTEM_COLUMNS:
+                continue
+            sets.append(f'"{col}"=?')
+            params.append(v)
 
-        conn.execute(sql, tuple(params))
+        sets.append("date_last_saved=?")
+        params.append(now_timestamp())
 
-    return redirect(url_for("form", last_id=record_id, last_type=otype, type=otype))
+        # Always allow storing GPS values when provided; schema always includes GPS columns.
+        if gps_lat is not None and gps_lon is not None:
+            sets += ["gps_lat=?", "gps_lon=?", "gps_alt=?", "gps_acc=?"]
+            params += [gps_lat, gps_lon, gps_alt, gps_acc]
+
+        params.append(rid)
+        conn.execute(f"UPDATE {otype} SET {', '.join(sets)} WHERE id=?", params)
+        conn.commit()
+        flash(f"Updated {meta['label']} ID {rid}")
+        return redirect(url_for("form", last_id=rid, last_type=otype, type=otype))
+
+    # Reset / copy-from behavior preserved by keeping existing JS+template
+    # Fall back: treat as new record
+    rid = _insert_record_only(otype, meta, values, gps_lat, gps_lon, gps_alt, gps_acc)
+    session.setdefault("current_record_by_type", {})[otype] = rid
+    flash(f"Saved {meta['label']} ID {rid}")
+    return redirect(url_for("form", last_id=rid, last_type=otype, type=otype))
 
 
-@app.route("/recent")
-def recent():
+def _insert_record_only(otype: str, meta: dict, values: dict, gps_lat, gps_lon, gps_alt, gps_acc) -> int:
+    conn = get_db()
+
+    cols = []
+    params = []
+    for col, val in values.items():
+        if col in SYSTEM_COLUMNS:
+            # keep explicit date_recorded/date_updated if present
+            if col in ("date_recorded", "date_updated", "date_last_saved"):
+                cols.append(col)
+                params.append(val)
+            continue
+        cols.append(f'"{col}"')
+        params.append(val)
+
+    # system columns
+    cols += ["thumbs_json", "images_json", "webps_json", "json_files_json", "date_last_saved"]
+    params += ["[]", "[]", "[]", "[]", now_timestamp()]
+
+    # GPS columns always exist in the schema; include them in every insert.
+    cols += ["gps_lat", "gps_lon", "gps_alt", "gps_acc"]
+    params += [gps_lat, gps_lon, gps_alt, gps_acc]
+
+    placeholders = ",".join(["?"] * len(cols))
+    sql = f"INSERT INTO {otype} ({', '.join(cols)}) VALUES ({placeholders})"
+    cur = conn.execute(sql, params)
+    conn.commit()
+    return int(cur.lastrowid)
+
+
+def _attach_image(otype: str, rid: int, file_storage, gps_lat, gps_lon, gps_alt, gps_acc):
+    conn = get_db()
+    row = conn.execute(f"SELECT * FROM {otype} WHERE id=?", (rid,)).fetchone()
+    if not row:
+        raise RuntimeError("Record not found")
+
+    raw_bytes = file_storage.read()
+    img = Image.open(BytesIO(raw_bytes))
+
+    exif_lat, exif_lon, exif_alt, exif_acc = _exif_gps_from_pil(img)
+    if GPS_ENABLED and (gps_lat is None or gps_lon is None):
+        gps_lat, gps_lon, gps_alt, gps_acc = exif_lat, exif_lon, exif_alt, exif_acc
+
+    stem = f"{otype}-{rid}-{int(time.time())}"
+    jpg_name, webp_name, thumb_name = _save_derivatives(img, stem)
+
+    def _append_json_list(colname, val):
+        arr = json.loads(row[colname] or "[]")
+        if not isinstance(arr, list):
+            arr = []
+        arr.append(val)
+        return json.dumps(arr, ensure_ascii=False, separators=(",", ":"))
+
+    thumbs_json = _append_json_list("thumbs_json", thumb_name)
+    images_json = _append_json_list("images_json", jpg_name)
+    webps_json = _append_json_list("webps_json", webp_name) if webp_name else row["webps_json"]
+
+    upd_cols = {
+        "thumbs_json": thumbs_json,
+        "images_json": images_json,
+        "webps_json": webps_json,
+        "date_last_saved": now_timestamp(),
+    }
+    if gps_lat is not None and gps_lon is not None:
+        upd_cols.update({"gps_lat": gps_lat, "gps_lon": gps_lon, "gps_alt": gps_alt, "gps_acc": gps_acc})
+
+    sets = ", ".join([f"{k}=?" for k in upd_cols.keys()])
+    conn.execute(f"UPDATE {otype} SET {sets} WHERE id=?", list(upd_cols.values()) + [rid])
+    conn.commit()
+
+
+@app.route("/uploads/<path:fname>")
+def serve_upload(fname):
+    return send_from_directory(str(UPLOAD_DIR), fname, as_attachment=False)
+
+
+# -----------------------------------------------------------------------------
+# Browse (merged Recent+Review)
+# -----------------------------------------------------------------------------
+
+@app.route("/browse")
+def browse():
     otype = (request.args.get("type") or "").strip().lower()
     if otype not in TYPE_META:
         otype = next(iter(TYPE_META.keys()))
     g.current_type = otype
-
-    view = (request.args.get("view") or "para").strip().lower()
-    if view not in ("para", "table", "grid"):
-        view = "para"
-
-    # Pagination (Recent)
-    try:
-        page = int(request.args.get("page") or "1")
-    except ValueError:
-        page = 1
-    page = max(page, 1)
-
-    try:
-        per_page = int(request.args.get("per_page") or "25")
-    except ValueError:
-        per_page = 25
-    per_page_choices = [10, 25, 50, 100]
-    if per_page not in per_page_choices:
-        per_page = 25
-
-    offset = (page - 1) * per_page
-
-    with get_db() as conn:
-        total = conn.execute(f"SELECT COUNT(*) AS n FROM {otype}").fetchone()["n"]
-        rows = conn.execute(
-            f"SELECT * FROM {otype} ORDER BY id DESC LIMIT ? OFFSET ?",
-            (per_page, offset),
-        ).fetchall()
-
-    start_n = offset + 1 if total and rows else 0
-    end_n = offset + len(rows) if total and rows else 0
-    has_prev = page > 1
-    has_next = (offset + per_page) < total
-
-    def _q(**kw):
-        base = {"type": otype, "view": view, "page": page, "per_page": per_page}
-        base.update(kw)
-        return base
-
-    return render_template(
-        "recent.html",
-        rows=rows,
-        otype=otype,
-        meta=TYPE_META[otype],
-        view=view,
-        page=page,
-        per_page=per_page,
-        per_page_choices=per_page_choices,
-        total=total,
-        start_n=start_n,
-        end_n=end_n,
-        has_prev=has_prev,
-        has_next=has_next,
-        prev_q=_q(page=page - 1),
-        next_q=_q(page=page + 1),
-        banner_title=make_banner_title("Recent", TYPE_META[otype]["label"]),
-    )
-
-
-def _index_groups_for_field(otype: str, field: str):
-    """Return grouped records for Index view.
-
-    For normal TEXT fields, groups by exact value.
-    For RADIO fields (stored as JSON list), groups by each selected value.
-    """
     meta = TYPE_META[otype]
-    fm = meta.get('field_meta', {}).get(field, {})
-    widget = (fm.get('widget') or '').lower()
-    is_radio = widget == 'radio'
 
-    # Pull only needed columns.
-    cols = set(['id', 'thumbs_json', 'images_json', field])
-    # Add any fields used in result_rows so we can show tidy metadata.
-    for c in meta.get('result_fields', []):
-        cols.add(c)
-    cols = [c for c in cols if c]
-    col_sql = ", ".join([f'"{c}"' for c in cols])
-
-    with get_db() as conn:
-        rows = conn.execute(
-            f"SELECT {col_sql} FROM {otype} ORDER BY id DESC"
-        ).fetchall()
-
-    groups = {}  # value -> list[dict]
-
-    def _add_to_group(val, rdict):
-        key = (val or '').strip()
-        if not key:
-            key = '(blank)'
-        groups.setdefault(key, []).append(rdict)
-
-    for r in rows:
-        r = dict(r)
-        thumbs = json.loads(r.get('thumbs_json') or '[]')
-        images = json.loads(r.get('images_json') or '[]')
-        pairs = []
-        # Prefer thumbs, but still link to matching full images by index.
-        for i, t in enumerate(thumbs):
-            full = images[i] if i < len(images) else t
-            pairs.append({'thumb': t, 'full': full})
-        # If no thumbs, fall back to full images.
-        if not pairs and images:
-            for img in images:
-                pairs.append({'thumb': img, 'full': img})
-        r['_img_pairs'] = pairs
-
-        raw = r.get(field)
-        if is_radio:
-            try:
-                vals = json.loads(raw) if raw else []
-                if not isinstance(vals, list):
-                    vals = [str(vals)]
-            except Exception:
-                vals = [str(raw)] if raw else []
-            if not vals:
-                _add_to_group('', r)
-            else:
-                for v in vals:
-                    _add_to_group(str(v), r)
-        else:
-            _add_to_group(str(raw) if raw is not None else '', r)
-
-    # Sort keys alphabetically, but keep (blank) last.
-    keys = sorted([k for k in groups.keys() if k != '(blank)'], key=lambda s: s.casefold())
-    if '(blank)' in groups:
-        keys.append('(blank)')
-
-    return [(k, groups[k]) for k in keys]
-
-
-@app.route("/review")
-def review():
-    """Review / concordance page (formerly Index)."""
-    otype = (request.args.get("type") or "").strip().lower()
-    if otype not in TYPE_META:
-        otype = next(iter(TYPE_META.keys()))
-    g.current_type = otype
-
-    meta = TYPE_META[otype]
-    index_fields = [f for f in (meta.get("index_fields") or []) if f in meta.get("field_meta", {})]
+    index_fields = [f for f in (meta.get("index_fields") or []) if f in meta["field_meta"]]
     field = (request.args.get("field") or (index_fields[0] if index_fields else "")).strip()
     if field not in index_fields and index_fields:
         field = index_fields[0]
@@ -1572,46 +798,104 @@ def review():
     if view not in ("para", "table", "grid"):
         view = "para"
 
-    # Pagination (applies to the record set selected by the index-field buttons)
-    try:
-        page = int(request.args.get("page") or "1")
-    except ValueError:
-        page = 1
-    page = max(page, 1)
+    mode = (request.args.get("mode") or "index").strip().lower()
+    if mode not in ("index", "recent"):
+        mode = "index"
 
+    q = (request.args.get("q") or "").strip()
+
+    # pagination
+    page = max(int(request.args.get("page") or 1), 1)
+    per_page_choices = [10, 25, 50, 100, 300]
     try:
-        per_page = int(request.args.get("per_page") or "25")
+        per_page = int(request.args.get("per_page") or 25)
     except ValueError:
         per_page = 25
-    per_page_choices = [10, 25, 50, 100]
     if per_page not in per_page_choices:
         per_page = 25
 
-    rows = []
-    total = 0
-    start_n = end_n = 0
-    has_prev = has_next = False
+    offset = (page - 1) * per_page
 
-    if field:
-        offset = (page - 1) * per_page
-        # Basic "has data" filter for the chosen field. Also excludes the empty JSON list string for multi-select fields.
-        where = f'("{field}" IS NOT NULL AND TRIM(CAST("{field}" AS TEXT)) != "" AND CAST("{field}" AS TEXT) != ?)'
-        with get_db() as conn:
-            total = conn.execute(f"SELECT COUNT(*) AS n FROM {otype} WHERE {where}", ("[]",)).fetchone()["n"]
-            rows = conn.execute(
-                f'SELECT * FROM {otype} WHERE {where} ORDER BY id DESC LIMIT ? OFFSET ?',
-                ("[]", per_page, offset),
-            ).fetchall()
+    where_clauses = []
+    params = []
 
-        start_n = offset + 1 if total and rows else 0
-        end_n = offset + len(rows) if total and rows else 0
-        has_prev = page > 1
-        has_next = (offset + per_page) < total
+    if mode == "index" and field:
+        where_clauses.append(f'("{field}" IS NOT NULL AND TRIM(CAST("{field}" AS TEXT)) != "" AND CAST("{field}" AS TEXT) != ?)')
+        params.append("[]")
 
-    # Group rows by the selected field value (within the current page) so the Review display
-    # can show headers for each value group without changing pagination semantics.
+    if q:
+        # generic LIKE search across user fields + id
+        like = f"%{q}%"
+        or_terms = ['CAST(id AS TEXT) LIKE ?']
+        params.append(like)
+        for col in meta["field_meta"].keys():
+            if col in ("thumbs_json", "images_json", "webps_json", "json_files_json"):
+                continue
+            or_terms.append(f'CAST("{col}" AS TEXT) LIKE ?')
+            params.append(like)
+        where_clauses.append("(" + " OR ".join(or_terms) + ")")
+
+    where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+
+    conn = get_db()
+    # Fetch all matching rows first, then paginate in Python. This keeps pagination stable
+    # for grouped/index views (and matches legacy Review behavior more closely).
+    all_rows = conn.execute(
+        f"SELECT * FROM {otype}{where_sql}",
+        params
+    ).fetchall()
+
+    def _group_key(r):
+        if not field:
+            return ""
+        v = r[field] if field in r.keys() else ""
+        if v is None:
+            s = ""
+        else:
+            s = str(v).strip()
+        if s.startswith("[") and s.endswith("]"):
+            try:
+                arr = json.loads(s)
+                if isinstance(arr, list):
+                    s = ", ".join([str(x) for x in arr if str(x).strip()])
+            except Exception:
+                pass
+        return s.strip() or "(no value)"
+
+    if mode == "recent":
+        all_rows = sorted(all_rows, key=lambda r: int(r["id"]), reverse=True)
+    else:
+        # index mode: sort by the displayed group key, then newest within group
+        all_rows = sorted(
+            all_rows,
+            key=lambda r: (
+                1 if _group_key(r) == "(no value)" else 0,
+                _group_key(r).lower(),
+                -int(r["id"])
+            )
+        )
+
+    total = len(all_rows)
+    rows = all_rows[offset: offset + per_page]
+
+    start_n = offset + 1 if total and rows else 0
+    end_n = offset + len(rows) if total and rows else 0
+    has_prev = page > 1
+    has_next = (offset + per_page) < total
+
+    def _q(**kw):
+        base = {"type": otype, "field": field, "view": view, "page": page, "per_page": per_page, "mode": mode, "q": q}
+        base.update(kw)
+        return base
+
+    prev_q = _q(page=page - 1) if has_prev else None
+    next_q = _q(page=page + 1) if has_next else None
+
+    # grouping
     groups = []
-    if field and rows:
+    if mode == "recent" or not field:
+        groups = [("Recent" if mode == "recent" else "", rows)]
+    else:
         tmp = collections.defaultdict(list)
         for r in rows:
             v = r[field] if field in r.keys() else ""
@@ -1620,7 +904,6 @@ def review():
                 key = ""
             else:
                 s = str(v).strip()
-                # If this is a JSON list (multi-select), show it as a comma-separated string.
                 if s.startswith("[") and s.endswith("]"):
                     try:
                         arr = json.loads(s)
@@ -1638,21 +921,20 @@ def review():
         for k in sorted(tmp.keys(), key=lambda x: x.lower()):
             groups.append((k, tmp[k]))
 
-    def _q(**kw):
-        base = {"type": otype, "field": field, "view": view, "page": page, "per_page": per_page}
-        base.update(kw)
-        return base
-
     return render_template(
         "index.html",
-        page_mode="review",
+        page_mode="browse",
+        banner_title=make_banner_title(meta["label"]),
+        NAV_LINKS=_nav_links(active="browse"),
         otype=otype,
         meta=meta,
         index_fields=index_fields,
         field=field,
         view=view,
-        rows=rows,
+        mode=mode,
+        q=q,
         groups=groups,
+        rows=rows,
         page=page,
         per_page=per_page,
         per_page_choices=per_page_choices,
@@ -1661,817 +943,342 @@ def review():
         end_n=end_n,
         has_prev=has_prev,
         has_next=has_next,
-        prev_q=_q(page=page - 1),
-        next_q=_q(page=page + 1),
-        banner_title=make_banner_title("Review", meta["label"]),
+        prev_q=prev_q,
+        next_q=next_q,
     )
 
 
-@app.route("/index")
-def index():
-    """Backward compatible route; redirect to /review."""
-    return redirect(url_for('review', **request.args))
-
-
-@app.route("/info")
-def info():
-    # Render Info inside index.html so it inherits the same <head>/layout/styles.
-    return render_template(
-        "index.html",
-        banner_title=make_banner_title("Info", ""),
-        page_mode="info",
-        # Safe defaults for index template variables (unused in info mode)
-        otype=(list(TYPE_META.keys())[0] if TYPE_META else ""),
-        index_types=(list(TYPE_META.keys()) if TYPE_META else []),
-        field_name="",
-        field_label="",
-        values=[],
-        groupings={},
-    )
-
-
-@app.route("/user")
-def user():
-    """Stub page for future user/profile/auth UI."""
-    return render_template(
-        "user.html",
-        banner_title=make_banner_title("Account"),
-    )
-
-
-@app.route("/uploads/<path:fname>")
-def serve_upload(fname):
-    return send_from_directory(UPLOAD_DIR, fname, as_attachment=False)
-
-
-@app.route("/admin")
-@requires_admin
-def admin_list():
-    otype = (request.args.get("type") or "").strip().lower()
-    if otype not in TYPE_META:
-        otype = next(iter(TYPE_META.keys()))
-    g.current_type = otype
-    meta = TYPE_META[otype]
-
-    q = request.args.get("q", "").strip()
-    view = (request.args.get("view") or "para").strip().lower()
-    if view not in ("para", "table", "grid"):
-        view = "para"
-
-    # Sorting (server-side) - applies across all pages.
-    sort = (request.args.get("sort") or "id").strip()
-    direction = (request.args.get("dir") or "desc").strip().lower()
-    if direction not in ("asc", "desc"):
-        direction = "desc"
-
-    # Allowed columns: id + configured result_fields + a few reserved timestamp fields if present.
-    allowed_cols = ["id"] + list(meta.get("result_fields") or [])
-    for extra in ("date_last_saved", "date_updated", "date_recorded"):
-        if extra not in allowed_cols and extra in meta.get("all_cols", allowed_cols):
-            allowed_cols.append(extra)
-
-    if sort not in allowed_cols:
-        sort = "id"
-
-    # Pagination
-    try:
-        page = int(request.args.get("page", "1"))
-    except ValueError:
-        page = 1
-    page = max(page, 1)
-
-    try:
-        per_page = int(request.args.get("per_page", "50"))
-    except ValueError:
-        per_page = 50
-    # Keep bounds reasonable
-    per_page = max(10, min(per_page, 200))
-
-    base_sql = f"FROM {otype}"
-    params = []
-    if q:
-        text_cols = [f[1] for f in meta["input_fields"] if (str(f[2] or "")).upper().startswith("TEXT")]
-        if text_cols:
-            where_clauses = [f"{c} LIKE ?" for c in text_cols]
-            base_sql += " WHERE " + " OR ".join(where_clauses)
-            like = f"%{q}%"
-            params = [like] * len(text_cols)
-
-    with get_db() as conn:
-        total = conn.execute(f"SELECT COUNT(*) {base_sql}", params).fetchone()[0]
-        total_pages = max(1, (total + per_page - 1) // per_page)
-        if page > total_pages:
-            page = total_pages
-        offset = (page - 1) * per_page
-
-        rows = conn.execute(
-            f"SELECT * {base_sql} ORDER BY {sort} {direction}, id DESC LIMIT ? OFFSET ?",
-            params + [per_page, offset],
-        ).fetchall()
-
-    return render_template(
-        "admin_list.html",
-        rows=rows,
-        q=q,
-        view=view,
-        sort=sort,
-        direction=direction,
-        page=page,
-        per_page=per_page,
-        total=total,
-        total_pages=total_pages,
-        otype=otype,
-        meta=meta,
-        banner_title=make_banner_title("Edit", meta["label"]),
-    )
-
-
-@app.post("/admin/<otype>/<int:aid>/add_image")
-@requires_admin
-def admin_add_image(otype, aid):
-    otype = (otype or '').strip().lower()
-    if otype not in TYPE_META:
-        flash('Unknown object type.')
-        return redirect(url_for('admin_list', type=otype))
-    meta = TYPE_META[otype]
-
-    f = request.files.get('photo')
-    if not f or f.filename == '':
-        flash('Please take or choose a photo.')
-        return redirect(url_for('admin_edit', otype=otype, aid=aid))
-
-    ts = int(time.time())
-    from datetime import datetime
-    now = datetime.now()
-    ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    ua = request.headers.get('User-Agent', '')
-
-    def _load_list(val):
-        if not val:
-            return []
-        try:
-            x = json.loads(val)
-            return x if isinstance(x, list) else []
-        except Exception:
-            return []
-
-    with get_db() as conn:
-        row = conn.execute(f"SELECT * FROM {otype} WHERE id=?", (aid,)).fetchone()
-        if not row:
-            flash('Record not found.')
-            return redirect(url_for('admin_list', type=otype))
-
-        # sqlite3.Row does not support .get(); convert to dict for convenience
-        row = dict(row)
-
-        images = _load_list(row.get('images_json'))
-        thumbs = _load_list(row.get('thumbs_json'))
-        webps = _load_list(row.get('webps_json'))
-        jfiles = _load_list(row.get('json_files_json'))
-
-        # Use existing record metadata values for filename formatting.
-        meta_values = {}
-        for fdef in meta['input_fields']:
-            col = fdef[1]
-            fm = meta['field_meta'].get(col, {})
-            if fm.get('widget') == 'constant':
-                meta_values[col] = str(fm.get('constant_value') or '')
-            else:
-                meta_values[col] = row.get(col)
-
-        # Read & process image
-        data = f.read()
-        img, exif_raw, exif_small, gps_lat, gps_lon, gps_alt = extract_exif_and_autorotate(data)
-        img, width, height = resize_if_needed(img)
-        thumb = make_thumbnail(img)
-
-        exif_datetime = exif_small.get('exif_datetime')
-        exif_make = exif_small.get('exif_make')
-        exif_model = exif_small.get('exif_model')
-        exif_orientation = exif_small.get('exif_orientation')
-
-        def _make_base(record_id: int) -> str:
-            fmt = (meta.get('filename_format') or '').strip()
-            out = _safe_format_filename(fmt, meta_values, record_id)
-            if out:
-                return out
-            return slug(f"{otype.upper()}_ID{record_id}")
-
-        img_idx = len(images) + 1
-        base = _make_base(int(aid)) + f"_IMG{img_idx}"
-        jpg_name = f"{base}.jpg"
-        thumb_name = f"{base}_thumb.jpg"
-        webp_name = f"{base}.webp"
-        json_name = f"{base}.json"
-
-        save_kwargs = {"format": "JPEG", "quality": JPEG_QUALITY}
-        if exif_raw:
-            save_kwargs['exif'] = exif_raw
-        img.convert('RGB').save(UPLOAD_DIR / jpg_name, **save_kwargs)
-        thumb.convert('RGB').save(UPLOAD_DIR / thumb_name, format='JPEG', quality=85)
-        img.save(UPLOAD_DIR / webp_name, 'WEBP', quality=WEBP_QUALITY, method=6)
-
-        images.append(jpg_name)
-        thumbs.append(thumb_name)
-        webps.append(webp_name)
-        jfiles.append(json_name)
-
-        json_payload = {
-            'object_type': otype,
-            'record_id': int(aid),
-            'image_index': img_idx,
-            'filename_base': base,
-            'filename': jpg_name,
-            'thumb_filename': thumb_name,
-            'webp_filename': webp_name,
-            'timestamp': ts,
-            'client_ip': ip,
-            'user_agent': ua,
-            'gps': {'lat': gps_lat, 'lon': gps_lon, 'alt': gps_alt},
-            'exif': {
-                'datetime': exif_datetime,
-                'make': exif_make,
-                'model': exif_model,
-                'orientation': exif_orientation,
-            },
-            'fields': meta_values,
-            'record_images': list(images),
-            'record_thumbs': list(thumbs),
-            'record_webps': list(webps),
-            'record_image_json_files': list(jfiles),
-        }
-        (UPLOAD_DIR / json_name).write_text(json.dumps(json_payload, indent=2), encoding='utf-8')
-
-        # Update record lists and timestamps
-        du_sql = ''
-        du_params = []
-        if meta.get('field_meta', {}).get('date_updated', {}).get('server_now'):
-            du_sql = 'date_updated=?, '
-            du_params.append(now.strftime(TIMESTAMP_FORMAT))
-
-        sql = (
-            f"UPDATE {otype} SET {du_sql}date_last_saved=?, images_json=?, thumbs_json=?, webps_json=?, json_files_json=?, "
-            "width=?, height=?, timestamp=?, ip=?, user_agent=?, exif_datetime=?, exif_make=?, exif_model=?, exif_orientation=?, gps_lat=?, gps_lon=?, gps_alt=? "
-            "WHERE id=?"
-        )
-        params = du_params + [
-            now.strftime(TIMESTAMP_FORMAT),
-            json.dumps(images), json.dumps(thumbs), json.dumps(webps), json.dumps(jfiles),
-            width, height, ts, ip, ua,
-            exif_datetime, exif_make, exif_model, exif_orientation,
-            gps_lat, gps_lon, gps_alt,
-            int(aid),
-        ]
-        conn.execute(sql, params)
-
-    flash(f"Added image to record {aid}.")
-    return redirect(url_for('admin_edit', otype=otype, aid=aid))
-
-
-@app.post('/admin/<otype>/<int:aid>/delete_image/<int:img_idx>')
-@requires_admin
-def admin_delete_image(otype, aid, img_idx):
-    otype = (otype or '').strip().lower()
-    if otype not in TYPE_META:
-        flash('Unknown object type.')
-        return redirect(url_for('admin_list', type=otype))
-    meta = TYPE_META[otype]
-
-    from datetime import datetime
-    now = datetime.now()
-
-    def _load_list(val):
-        if not val:
-            return []
-        try:
-            x = json.loads(val)
-            return x if isinstance(x, list) else []
-        except Exception:
-            return []
-
-    def _safe_delete_upload(fname: str):
-        if not fname:
-            return
-        try:
-            p = (UPLOAD_DIR / fname).resolve()
-            root = UPLOAD_DIR.resolve()
-            if str(p).startswith(str(root)) and p.exists():
-                p.unlink()
-        except Exception:
-            pass
-
-    with get_db() as conn:
-        row = conn.execute(f"SELECT * FROM {otype} WHERE id=?", (aid,)).fetchone()
-        if not row:
-            flash('Record not found.')
-            return redirect(url_for('admin_list', type=otype))
-        row = dict(row)
-
-        images = _load_list(row.get('images_json'))
-        thumbs = _load_list(row.get('thumbs_json'))
-        webps = _load_list(row.get('webps_json'))
-        jfiles = _load_list(row.get('json_files_json'))
-
-        # img_idx is 0-based index from the template
-        max_len = max(len(images), len(thumbs), len(webps), len(jfiles), 0)
-        if img_idx < 0 or img_idx >= max_len:
-            flash('Image index out of range.')
-            return redirect(url_for('admin_edit', otype=otype, aid=aid))
-
-        if img_idx < len(images):
-            _safe_delete_upload(images[img_idx])
-            images.pop(img_idx)
-        if img_idx < len(thumbs):
-            _safe_delete_upload(thumbs[img_idx])
-            thumbs.pop(img_idx)
-        if img_idx < len(webps):
-            _safe_delete_upload(webps[img_idx])
-            webps.pop(img_idx)
-        if img_idx < len(jfiles):
-            _safe_delete_upload(jfiles[img_idx])
-            jfiles.pop(img_idx)
-
-        du_sql = ''
-        du_params = []
-        if meta.get('field_meta', {}).get('date_updated', {}).get('server_now'):
-            du_sql = 'date_updated=?, '
-            du_params.append(now.strftime(TIMESTAMP_FORMAT))
-
-        sql = (
-            f"UPDATE {otype} SET {du_sql}date_last_saved=?, images_json=?, thumbs_json=?, webps_json=?, json_files_json=? "
-            "WHERE id=?"
-        )
-        params = du_params + [
-            now.strftime(TIMESTAMP_FORMAT),
-            json.dumps(images), json.dumps(thumbs), json.dumps(webps), json.dumps(jfiles),
-            int(aid),
-        ]
-        conn.execute(sql, params)
-
-    flash('Deleted image.')
-    return redirect(url_for('admin_edit', otype=otype, aid=aid))
-
+# -----------------------------------------------------------------------------
+# Edit (single record, reached only from Browse)
+# -----------------------------------------------------------------------------
 
 @app.route("/admin/edit/<otype>/<int:aid>", methods=["GET", "POST"])
-@requires_admin
 def admin_edit(otype, aid):
-    otype = (otype or "").strip().lower()
     if otype not in TYPE_META:
-        flash("Unknown object type")
-        return redirect(url_for("admin_list"))
+        flash("Unknown object type.")
+        return redirect(url_for("browse"))
     meta = TYPE_META[otype]
-    g.current_type = otype
-    with get_db() as conn:
-        if request.method == "POST":
-            from datetime import datetime
-            now = datetime.now()
-            coerced: dict = {}
-            for f in meta["input_fields"]:
-                label, col, coltype = f[0], f[1], (f[2] if len(f) > 2 else "TEXT")
-                t = (str(coltype or "TEXT")).upper().strip()
-                fm = meta["field_meta"].get(col, {})
 
-                # Server-managed timestamp/date (e.g., date_updated/date_recorded)
-                if fm.get("server_now"):
-                    coerced[col] = now.strftime(DATE_FORMAT) if t == "DATE" else now.strftime(TIMESTAMP_FORMAT)
-                    continue
-
-                # Enforce CONSTANT fields as server-controlled values.
-                if t == "CONSTANT" or fm.get("widget") == "constant":
-                    coerced[col] = str(fm.get("constant_value") or "")
-                    continue
-
-                # RADIO fields are multi-select, stored as JSON list (TEXT).
-                if fm.get("widget") == "radio":
-                    selected = [str(v).strip() for v in request.form.getlist(col) if str(v).strip()]
-                    coerced[col] = json.dumps(selected, ensure_ascii=False, separators=(",", ":")) if selected else None
-                    continue
-
-                raw = (request.form.get(col) or "").strip()
-                if fm.get("widget") == "uppercase" and raw:
-                    raw = raw.upper()
-                if not raw:
-                    coerced[col] = None
-                elif t.startswith("INT"):
-                    try:
-                        coerced[col] = int(raw)
-                    except ValueError:
-                        coerced[col] = None
-                elif t.startswith("FLOAT") or t.startswith("REAL") or t.startswith("DOUBLE"):
-                    try:
-                        coerced[col] = float(raw)
-                    except ValueError:
-                        coerced[col] = None
-                elif t == "DATE":
-                    coerced[col] = _normalize_date_input(raw)
-                elif t == "TIMESTAMP":
-                    coerced[col] = _normalize_timestamp_input(raw)
-                else:
-                    coerced[col] = raw
-
-            # Apply optional server-side postprocessing to Edit updates.
-            try:
-                coerced = _apply_postprocess_values(otype, coerced)
-            except Exception:
-                flash("post processing failed, please correct.")
-                row0 = conn.execute(f"SELECT * FROM {otype} WHERE id=?", (aid,)).fetchone()
-                r0 = dict(row0) if row0 else {}
-                r0.update(coerced or {})
-                return render_template(
-                    "admin_edit.html",
-                    r=r0,
-                    otype=otype,
-                    meta=meta,
-                    banner_title=make_banner_title("Edit", meta["label"], f"ID {aid}"),
-                )
-
-            updates = dict(coerced or {})
-            # App-internal save timestamp always bumps on edit.
-            updates["date_last_saved"] = now.strftime(TIMESTAMP_FORMAT)
-            if meta.get("field_meta", {}).get("date_updated", {}).get("server_now"):
-                updates["date_updated"] = now.strftime(TIMESTAMP_FORMAT)
-            # Special: date_recorded also bumps on every save if defined.
-            if meta.get("field_meta", {}).get("date_recorded", {}).get("server_now"):
-                updates["date_recorded"] = now.strftime(TIMESTAMP_FORMAT)
-
-            if updates:
-                set_clause = ", ".join([f"{c}=?" for c in updates.keys()])
-                params = list(updates.values()) + [aid]
-                conn.execute(f"UPDATE {otype} SET {set_clause} WHERE id=?", params)
-                flash(f"Updated {otype} {aid}")
-            return redirect(url_for("admin_list", type=otype))
-
-        row = conn.execute(f"SELECT * FROM {otype} WHERE id=?", (aid,)).fetchone()
+    conn = get_db()
+    row = conn.execute(f"SELECT * FROM {otype} WHERE id=?", (aid,)).fetchone()
     if not row:
-        flash("Not found")
-        return redirect(url_for("admin_list", type=otype))
-    g.current_type = otype
-    # Jinja templates often use mapping methods like .get(); sqlite3.Row does not provide .get.
-    # Normalize to a plain dict for template friendliness.
+        flash("Record not found.")
+        return redirect(url_for("browse", type=otype))
+
+    if request.method == "POST":
+        # Update only fields present in form
+        values = _coerce_form_values(meta, request.form, allow_missing=True)
+
+        sets = []
+        params = []
+        for col, v in values.items():
+            if col in SYSTEM_COLUMNS:
+                continue
+            sets.append(f'"{col}"=?')
+            params.append(v)
+        # server-managed timestamp
+        sets.append("date_last_saved=?")
+        params.append(now_timestamp())
+
+        if sets:
+            params.append(aid)
+            conn.execute(f"UPDATE {otype} SET {', '.join(sets)} WHERE id=?", params)
+            conn.commit()
+            flash("Saved.")
+        return redirect(url_for("admin_edit", otype=otype, aid=aid))
+
     return render_template(
         "admin_edit.html",
-        r=dict(row),
         otype=otype,
         meta=meta,
-        banner_title=make_banner_title("Edit", meta["label"], f"ID {aid}"),
+        # Keep template compatibility: older templates expect `r`.
+        r=row,
+        row=row,
+        banner_title=f"{meta['label']} {aid}",
+        NAV_LINKS=_nav_links(active="browse"),
     )
+
+
+@app.route("/admin/add-image/<otype>/<int:aid>", methods=["POST"])
+def admin_add_image(otype, aid):
+    """Add an image to an existing record from the Edit page."""
+    if otype not in TYPE_META:
+        flash("Unknown object type.")
+        return redirect(url_for("browse"))
+
+    photo = request.files.get("photo")
+    if not photo or not getattr(photo, "filename", ""):
+        flash("No image selected.")
+        return redirect(url_for("admin_edit", otype=otype, aid=aid))
+
+    # Optional GPS fields may be posted; schema always includes GPS columns.
+    gps_lat = request.form.get("gps_lat", type=float)
+    gps_lon = request.form.get("gps_lon", type=float)
+    gps_alt = request.form.get("gps_alt", type=float)
+    gps_acc = request.form.get("gps_acc", type=float)
+
+    try:
+        _attach_image(otype, aid, photo, gps_lat, gps_lon, gps_alt, gps_acc)
+        flash("Added image.")
+    except Exception as e:
+        flash(f"Failed to add image: {e}")
+
+    return redirect(url_for("admin_edit", otype=otype, aid=aid))
 
 
 @app.route("/admin/delete/<otype>/<int:aid>", methods=["POST"])
-@requires_admin
 def admin_delete(otype, aid):
-    otype = (otype or "").strip().lower()
+    """Delete a single record and any attached files."""
     if otype not in TYPE_META:
-        flash("Unknown object type")
-        return redirect(url_for("admin_list"))
-    with get_db() as conn:
-        row = conn.execute(
-            f"SELECT images_json, thumbs_json, webps_json, json_files_json FROM {otype} WHERE id=?",
-            (aid,),
-        ).fetchone()
-        conn.execute(f"DELETE FROM {otype} WHERE id=?", (aid,))
-    if row:
-        try:
-            files = []
-            for col in ["images_json", "thumbs_json", "webps_json", "json_files_json"]:
-                files.extend(json.loads(row[col] or "[]") or [])
-        except Exception:
-            files = []
-        for fn in files:
-            if fn:
-                try:
-                    (UPLOAD_DIR / fn).unlink(missing_ok=True)
-                except Exception:
-                    pass
-    flash(f"Deleted {otype} {aid}")
-    return redirect(url_for("admin_list", type=otype))
+        flash("Unknown object type.")
+        return redirect(url_for("browse"))
 
+    conn = get_db()
+    row = conn.execute(f"SELECT * FROM {otype} WHERE id=?", (aid,)).fetchone()
+    if not row:
+        flash("Record not found.")
+        return redirect(url_for("browse", type=otype))
+
+    # Remove attached files
+    for col in ("thumbs_json", "images_json", "webps_json", "json_files_json"):
+        try:
+            arr = json.loads(row[col] or "[]")
+            if isinstance(arr, list):
+                for fname in arr:
+                    if fname:
+                        try:
+                            (UPLOAD_DIR / fname).unlink(missing_ok=True)
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+
+    conn.execute(f"DELETE FROM {otype} WHERE id=?", (aid,))
+    conn.commit()
+    flash(f"Deleted {TYPE_META[otype]['label']} {aid}.")
+    return redirect(url_for("browse", type=otype))
+
+
+@app.route("/recent")
+def recent():
+    """Backward-compatible alias used by older templates: redirects to Browse (Recent mode)."""
+    otype = (request.args.get("type") or request.args.get("otype") or "").strip().lower()
+    if otype not in TYPE_META:
+        otype = next(iter(TYPE_META.keys()))
+    view = (request.args.get("view") or "para").strip().lower()
+    if view not in ("para", "table", "grid"):
+        view = "para"
+    return redirect(url_for("browse", type=otype, mode="recent", view=view))
+
+
+@app.route("/admin/delete-image/<otype>/<int:aid>/<int:idx>", methods=["POST"])
+def admin_delete_image(otype, aid, idx):
+    if otype not in TYPE_META:
+        return jsonify({"ok": False})
+    conn = get_db()
+    row = conn.execute(f"SELECT * FROM {otype} WHERE id=?", (aid,)).fetchone()
+    if not row:
+        return jsonify({"ok": False})
+
+    def _pop(colname):
+        arr = json.loads(row[colname] or "[]")
+        if not isinstance(arr, list) or idx < 0 or idx >= len(arr):
+            return row[colname]
+        removed = arr.pop(idx)
+        # try remove file on disk
+        if removed:
+            try:
+                (UPLOAD_DIR / removed).unlink(missing_ok=True)
+            except Exception:
+                pass
+        return json.dumps(arr, ensure_ascii=False, separators=(",", ":"))
+
+    thumbs_json = _pop("thumbs_json")
+    images_json = _pop("images_json")
+    webps_json = _pop("webps_json")
+
+    conn.execute(
+        f"UPDATE {otype} SET thumbs_json=?, images_json=?, webps_json=?, date_last_saved=? WHERE id=?",
+        (thumbs_json, images_json, webps_json, now_timestamp(), aid),
+    )
+    conn.commit()
+    return jsonify({"ok": True})
+
+
+# -----------------------------------------------------------------------------
+# Import / Export (retained endpoints; buttons are now on Browse)
+# -----------------------------------------------------------------------------
 
 @app.route("/admin/export.csv")
-@requires_admin
 def admin_export_csv():
     otype = (request.args.get("type") or "").strip().lower()
     if otype not in TYPE_META:
         otype = next(iter(TYPE_META.keys()))
-    with get_db() as conn:
-        rows = conn.execute(
-            f"SELECT * FROM {otype} ORDER BY id ASC"
-        ).fetchall()
-        headers = rows[0].keys() if rows else []
+    conn = get_db()
+    rows = conn.execute(f"SELECT * FROM {otype} ORDER BY id ASC").fetchall()
+    if not rows:
+        return Response("", mimetype="text/csv")
 
-    def generate():
-        yield ",".join(headers) + "\n"
-        with get_db() as conn2:
-            for r in conn2.execute(f"SELECT * FROM {otype} ORDER BY id ASC"):
-                vals = []
-                for h in headers:
-                    v = r[h]
-                    if v is None:
-                        vals.append("")
-                    else:
-                        s = str(v)
-                        if any(c in s for c in [",", "\n", '"']):
-                            s = '"' + s.replace('"', '""') + '"'
-                        vals.append(s)
-                yield ",".join(vals) + "\n"
-
+    import csv
+    buf = BytesIO()
+    # write utf-8 with BOM for Excel friendliness
+    text = []
+    cols = rows[0].keys()
+    text.append(",".join([f'"{c}"' for c in cols]) + "\n")
+    for r in rows:
+        vals = []
+        for c in cols:
+            v = r[c]
+            if v is None:
+                vals.append("")
+            else:
+                s = str(v).replace('"', '""')
+                vals.append(f'"{s}"')
+        text.append(",".join(vals) + "\n")
+    data = "".join(text).encode("utf-8-sig")
     return Response(
-        generate(),
+        data,
         mimetype="text/csv",
-        headers={"Content-Disposition": f"attachment; filename={otype}.csv"},
+        headers={"Content-Disposition": f'attachment; filename="{otype}.csv"'}
     )
+@app.route("/admin/delete-image/<otype>/<int:aid>/<int:img_idx>", methods=["POST"])
+def admin_delete_image_compat(otype, aid, img_idx):
+    # Backward-compatible alias for older templates that used img_idx.
+    return admin_delete_image(otype, aid, img_idx)
+
+
 
 
 @app.route("/admin/import.csv", methods=["POST"])
-@requires_admin
 def admin_import_csv():
-    """Import records from a CSV export previously produced by this app.
-
-    - Accepts multipart/form-data with a file field named "file".
-    - Duplicate records (same meta_signature) are skipped.
-    - Returns JSON: {imported: int, skipped: int, errors: int}
-    """
-
-    import csv
-
-    otype = (request.args.get("type") or request.form.get("type") or "").strip().lower()
+    otype = (request.form.get("type") or "").strip().lower()
     if otype not in TYPE_META:
-        return jsonify({"error": "Unknown object type"}), 400
+        flash("Unknown object type.")
+        return redirect(url_for("browse"))
 
-    up = request.files.get("file")
-    if not up or not getattr(up, "filename", ""):
-        return jsonify({"error": "No file provided"}), 400
+    file = request.files.get("csv_file")
+    if not file or not getattr(file, "filename", ""):
+        flash("No CSV selected.")
+        return redirect(url_for("browse", type=otype))
 
+    import csv, io
     meta = TYPE_META[otype]
+    allowed = set(meta["field_meta"].keys()) | SYSTEM_COLUMNS
 
-    def _compute_meta_signature(row: dict) -> str:
-        signature_values = {}
-        for fdef in meta["input_fields"]:
-            col, coltype = fdef[1], (fdef[2] if len(fdef) > 2 else "TEXT")
-            t = (str(coltype or "TEXT")).upper().strip()
-            if t.startswith("TIMESTAMP"):
+    raw = file.read().decode("utf-8-sig", errors="replace")
+    reader = csv.DictReader(io.StringIO(raw))
+    conn = get_db()
+
+    inserted = 0
+    bad_dates = []  # (csv_row_num, field, raw_value)
+
+    # csv.DictReader starts at first data row; for friendlier reporting we track row numbers
+    csv_row_num = 1  # header line
+    for row in reader:
+        csv_row_num += 1
+        cols = []
+        params = []
+        for k, v in row.items():
+            if k not in allowed or k == "id":
                 continue
-            signature_values[col] = row.get(col) if row.get(col) != "" else None
-        return json.dumps(signature_values, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+            vv = (v or "").strip()
 
-    # Determine the columns that exist in the table; ignore anything extra from the CSV.
-    with get_db() as conn:
-        table_cols = [r["name"] for r in conn.execute(f"PRAGMA table_info({otype})").fetchall()]
+            # Gentle DATE parsing: invalid dates are zapped (NULL) and reported.
+            if k in meta["field_meta"] and meta["field_meta"][k]["sql_type"].upper() == "DATE":
+                if vv:
+                    try:
+                        vv = parse_user_date(vv)
+                    except Exception:
+                        bad_dates.append((csv_row_num, k, vv))
+                        vv = None
+                else:
+                    vv = None
 
-    # Read the CSV into dict rows.
-    # Be liberal in what we accept: exports may get re-saved by Excel or other tools
-    # with UTF-8/UTF-16 BOMs or Windows encodings.
-    import io
-    import codecs
+            cols.append(f'"{k}"')
+            params.append(vv if vv != "" else None)
 
-    try:
-        raw_bytes = up.read()  # FileStorage; read once
-        if raw_bytes is None:
-            raise ValueError("empty")
+        cols.append("date_last_saved")
+        params.append(now_timestamp())
 
-        # Guess encoding via BOM, then fall back through a small set.
-        enc_candidates = []
-        if raw_bytes.startswith(codecs.BOM_UTF8):
-            enc_candidates = ["utf-8-sig"]
-        elif raw_bytes.startswith(codecs.BOM_UTF16_LE) or raw_bytes.startswith(codecs.BOM_UTF16_BE):
-            enc_candidates = ["utf-16"]
-        elif raw_bytes.startswith(codecs.BOM_UTF32_LE) or raw_bytes.startswith(codecs.BOM_UTF32_BE):
-            enc_candidates = ["utf-32"]
-        else:
-            enc_candidates = ["utf-8-sig", "utf-8", "utf-16", "cp1252", "latin-1"]
+        if cols:
+            placeholders = ",".join(["?"] * len(cols))
+            conn.execute(f"INSERT INTO {otype} ({', '.join(cols)}) VALUES ({placeholders})", params)
+            inserted += 1
 
-        text = None
-        for enc in enc_candidates:
-            try:
-                text = raw_bytes.decode(enc)
-                break
-            except UnicodeDecodeError:
-                continue
+    conn.commit()
 
-        if text is None:
-            # Last-ditch: decode with replacement so we can at least attempt parsing.
-            text = raw_bytes.decode("utf-8", errors="replace")
+    if bad_dates:
+        # Show a short summary (avoid spamming flash)
+        preview = bad_dates[:8]
+        more = len(bad_dates) - len(preview)
+        msg = "; ".join([f"row {rn} {fld}='{val}'" for rn, fld, val in preview])
+        if more > 0:
+            msg += f" (+{more} more)"
+        flash(f"Imported {inserted} rows into {otype}. Some invalid dates were cleared: {msg}", "warning")
+    else:
+        flash(f"Imported {inserted} rows into {otype}.")
 
-        # Dialect sniffing (commas vs tabs vs semicolons) with safe fallback.
-        sample = text[:8192]
-        try:
-            dialect = csv.Sniffer().sniff(sample)
-        except Exception:
-            dialect = csv.excel
-
-        reader = csv.DictReader(io.StringIO(text), dialect=dialect)
-        if not reader.fieldnames:
-            raise ValueError("no header")
-
-    except Exception:
-        return jsonify({"error": "Could not read CSV"}), 400
-
-    imported = 0
-    skipped = 0
-    errors = 0
-
-    # Import within one transaction for speed.
-    with get_db() as conn:
-        for raw in reader:
-            try:
-                if not raw:
-                    continue
-
-                # Keep only known columns
-                row = {}
-                for k, v in raw.items():
-                    if k is None:
-                        continue
-                    kk = str(k).strip()
-                    if not kk or kk not in table_cols:
-                        continue
-                    vv = v
-                    if vv is None:
-                        row[kk] = None
-                    else:
-                        s = str(vv)
-                        row[kk] = (None if s.strip() == "" else s)
-
-                # Always let the database assign a new ID
-                row.pop("id", None)
-
-                # Ensure meta_signature exists (older CSVs may not include it)
-                ms = row.get("meta_signature")
-                if not ms:
-                    ms = _compute_meta_signature(row)
-                    row["meta_signature"] = ms
-
-                # Skip duplicates
-                dup = conn.execute(
-                    f"SELECT 1 FROM {otype} WHERE meta_signature=? LIMIT 1",
-                    (ms,),
-                ).fetchone()
-                if dup:
-                    skipped += 1
-                    continue
-
-                cols = [c for c in row.keys() if c in table_cols]
-                if not cols:
-                    errors += 1
-                    continue
-                placeholders = ",".join(["?"] * len(cols))
-                sql = f"INSERT INTO {otype} ({','.join(cols)}) VALUES ({placeholders})"
-                conn.execute(sql, tuple(row[c] for c in cols))
-                imported += 1
-            except Exception:
-                errors += 1
-                continue
-        conn.commit()
-
-    return jsonify({"imported": imported, "skipped": skipped, "errors": errors})
-
-
-@app.route("/admin/record/<otype>/<int:aid>.json")
-@requires_admin
-def admin_record_json(otype: str, aid: int):
-    """Return a single record as JSON, including *all* attached images."""
-    otype = (otype or "").strip().lower()
-    if otype not in TYPE_META:
-        return jsonify({"error": "Unknown object type"}), 404
-    meta = TYPE_META[otype]
-    with get_db() as conn:
-        row = conn.execute(f"SELECT * FROM {otype} WHERE id=?", (aid,)).fetchone()
-    if not row:
-        return jsonify({"error": "Not found"}), 404
-
-    def _loads(val):
-        if not val:
-            return []
-        try:
-            x = json.loads(val)
-            return x if isinstance(x, list) else []
-        except Exception:
-            return []
-
-    fields = {}
-    for f in meta["input_fields"]:
-        col = f[1]
-        fields[col] = row[col]
-
-    payload = {
-        "object_type": otype,
-        "record_id": row["id"],
-        "fields": fields,
-        "images": _loads(row["images_json"]),
-        "thumbs": _loads(row["thumbs_json"]),
-        "webps": _loads(row["webps_json"]),
-        "image_json_files": _loads(row["json_files_json"]),
-        "timestamp": row["timestamp"],
-        "client_ip": row["ip"],
-        "user_agent": row["user_agent"],
-        "gps": {"lat": row["gps_lat"], "lon": row["gps_lon"], "alt": row["gps_alt"]},
-        "exif": {
-            "datetime": row["exif_datetime"],
-            "make": row["exif_make"],
-            "model": row["exif_model"],
-            "orientation": row["exif_orientation"],
-        },
-    }
-    return jsonify(payload)
-
-
-@app.route("/admin/record/<otype>/<int:aid>/images")
-@requires_admin
-def admin_record_images(otype: str, aid: int):
-    """Render a gallery of *all* images for a record.
-
-    This exists because many records can accumulate multiple photos, and linking to a single
-    JPEG is confusing.
-    """
-    otype = (otype or "").strip().lower()
-    if otype not in TYPE_META:
-        return "Unknown object type", 404
-    g.current_type = otype
-    meta = TYPE_META[otype]
-    with get_db() as conn:
-        row = conn.execute(f"SELECT * FROM {otype} WHERE id=?", (aid,)).fetchone()
-    if not row:
-        return "Not found", 404
-
-    def _loads(val):
-        if not val:
-            return []
-        try:
-            x = json.loads(val)
-            return x if isinstance(x, list) else []
-        except Exception:
-            return []
-
-    images = _loads(row["images_json"])
-    thumbs = _loads(row["thumbs_json"])
-    return render_template(
-        "record_images.html",
-        otype=otype,
-        meta=meta,
-        r=row,
-        images=images,
-        thumbs=thumbs,
-        banner_title=make_banner_title("Images", f"{meta['label']} {row['id']}"),
-    )
-
+    return redirect(url_for("browse", type=otype))
 
 @app.route("/admin/export.geojson")
-@requires_admin
 def admin_export_geojson():
     otype = (request.args.get("type") or "").strip().lower()
     if otype not in TYPE_META:
         otype = next(iter(TYPE_META.keys()))
-    meta = TYPE_META[otype]
-    with get_db() as conn:
-        rows = conn.execute(
-            f"SELECT * FROM {otype} "
-            "WHERE gps_lat IS NOT NULL AND gps_lon IS NOT NULL "
-            "ORDER BY id ASC"
-        ).fetchall()
+    conn = get_db()
+    rows = conn.execute(
+        f"SELECT * FROM {otype} WHERE gps_lat IS NOT NULL AND gps_lon IS NOT NULL ORDER BY id ASC"
+    ).fetchall()
+
     features = []
     for r in rows:
-        props = {}
-        for f in meta["input_fields"]:
-            label, col, _ctype = f[0], f[1], f[2]
-            props[col] = r[col]
-        props.update({
-            "id": r["id"],
-            "images": json.loads(r["images_json"] or "[]") if r["images_json"] else [],
-            "thumbs": json.loads(r["thumbs_json"] or "[]") if r["thumbs_json"] else [],
-            "webps": json.loads(r["webps_json"] or "[]") if r["webps_json"] else [],
-            "json_files": json.loads(r["json_files_json"] or "[]") if r["json_files_json"] else [],
-            "timestamp": r["timestamp"],
-            "exif_datetime": r["exif_datetime"],
-            "camera": " ".join(p for p in [r["exif_make"], r["exif_model"]] if p),
-        })
-        feat = {
+        props = {k: r[k] for k in r.keys() if k not in ("gps_lat", "gps_lon", "gps_alt", "gps_acc")}
+        features.append({
             "type": "Feature",
-            "geometry": {
-                "type": "Point",
-                "coordinates": [r["gps_lon"], r["gps_lat"]],
-            },
+            "geometry": {"type": "Point", "coordinates": [r["gps_lon"], r["gps_lat"]]},
             "properties": props,
-        }
-        features.append(feat)
-    return jsonify({"type": "FeatureCollection", "features": features})
+        })
+
+    geo = {"type": "FeatureCollection", "features": features}
+    data = json.dumps(geo, ensure_ascii=False).encode("utf-8")
+    return Response(
+        data,
+        mimetype="application/geo+json",
+        headers={"Content-Disposition": f'attachment; filename="{otype}.geojson"'}
+    )
 
 
 @app.route("/admin/map")
-@requires_admin
 def admin_map():
-    if not GPS_ENABLED:
-        flash("GPS is disabled; map view is unavailable.")
-        return redirect(url_for("admin_list", type=_get_current_type()))
+    # retained: used for GPS browsing
     otype = (request.args.get("type") or "").strip().lower()
     if otype not in TYPE_META:
         otype = next(iter(TYPE_META.keys()))
-    g.current_type = otype
+    meta = TYPE_META[otype]
     return render_template(
         "admin_map.html",
         otype=otype,
-        meta=TYPE_META[otype],
-        banner_title=make_banner_title("Edit", "Map", TYPE_META[otype]["label"]),
+        meta=meta,
+        banner_title=f"{meta['label']} Map",
+        NAV_LINKS=_nav_links(active="browse"),
     )
+
+
+# -----------------------------------------------------------------------------
+# Info
+# -----------------------------------------------------------------------------
+
+@app.route("/info")
+def info():
+    return render_template("index.html",
+                           page_mode="info",
+                           banner_title="Info",
+                           NAV_LINKS=_nav_links(active="info"))
+
+
+@app.route("/favicon.ico")
+def favicon():
+    return send_from_directory(app.static_folder, "favicon.ico", mimetype="image/vnd.microsoft.icon")
 
 
 # run(server='gunicorn', port=parmz.PORT)

@@ -3,10 +3,11 @@ CHANGELOG for artifact-capture
 OK, it is not a *real* change log, but a list of changes resulting from git log
 sometimes with some human annotation after the fact.
 
-This is version 0.9.0-rc1
-Sun Feb  8 17:06:04 PST 2026
+This is version 0.9.0-rc2
+Sun Feb  8 17:13:47 PST 2026
 
-54843be (HEAD -> main, origin/main, origin/HEAD) add runtime parameters for server start; tweaks on admin_list.html
+0ee54c0 (HEAD -> main, tag: 0.9.0-rc1, origin/main, origin/HEAD) revise CHANGELOG.txt and bump version to 0.9.0-rc1
+54843be add runtime parameters for server start; tweaks on admin_list.html
 c485e51 add rsync script to keep local and aws data in sync
 f1097e4 revise css to use full window; further tap config tweaks
 2a1d418 update tap config: photographs

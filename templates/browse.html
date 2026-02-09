@@ -1,0 +1,145 @@
+
+{#
+  Browse page body (merged Recent + Review).
+  Rendered inside index.html so it inherits the shared <head>/banner/styles.
+
+  Expected vars (provided by /browse route):
+    otype, meta, index_fields, field, view, mode, q
+    rows, groups
+    page, per_page, per_page_choices, total, start_n, end_n, has_prev, has_next, prev_q, next_q
+    OBJECT_TYPES
+#}
+
+<div class="card">
+  <div class="tabs">
+    {% for key, m in OBJECT_TYPES.items() %}
+      <a class="tab {% if key == otype %}active{% endif %}"
+         href="{{ url_for('browse', type=key, view=view, per_page=per_page, mode=mode, q=q) }}">{{ m.label }}</a>
+    {% endfor %}
+  </div>
+
+  {% if not index_fields %}
+    <div style="margin-top:12px;" class="meta">
+      No browse fields are configured for this object type. Add an
+      <code>index</code> list in <code>config.py</code> (e.g. <code>'index': ['temper','typology']</code>).
+    </div>
+  {% else %}
+
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-top:10px; flex-wrap:wrap;">
+      <div class="actions" style="flex-wrap:wrap; margin:0;">
+        <a class="btn {% if mode == 'recent' %}primary{% endif %}"
+           href="{{ url_for('browse', type=otype, mode='recent', view=view, page=1, per_page=per_page, q=q) }}">Recent</a>
+
+        {% for f in index_fields %}
+          {% set lbl = meta.field_meta.get(f, {}).get('label') or f %}
+          <a class="btn {% if mode == 'index' and f == field %}primary{% endif %}"
+             href="{{ url_for('browse', type=otype, mode='index', field=f, view=view, page=1, per_page=per_page, q=q) }}">{{ lbl }}</a>
+        {% endfor %}
+      </div>
+
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        <form method="get" action="{{ url_for('browse') }}" style="display:flex; gap:6px; align-items:center; margin:0;">
+          <input type="hidden" name="type" value="{{ otype }}">
+          <input type="hidden" name="field" value="{{ field }}">
+          <input type="hidden" name="view" value="{{ view }}">
+          <input type="hidden" name="mode" value="{{ mode }}">
+          <input type="hidden" name="per_page" value="{{ per_page }}">
+          <input type="hidden" name="page" value="1">
+          <input class="input" type="search" name="q" value="{{ q }}" placeholder="Search…" style="min-width:220px;">
+          <button class="btn" type="submit">Search</button>
+          {% if q %}
+            <a class="btn" href="{{ url_for('browse', type=otype, field=field, view=view, mode=mode, per_page=per_page, page=1, q='') }}">Clear</a>
+          {% endif %}
+        </form>
+
+        <a class="btn" href="{{ url_for('admin_export_csv', type=otype) }}">Export CSV</a>
+
+                <form id="importCsvForm" method="post" action="{{ url_for('admin_import_csv') }}" enctype="multipart/form-data"
+              style="display:flex; gap:6px; align-items:center; margin:0;">
+          <input type="hidden" name="type" value="{{ otype }}">
+          <input id="importCsvFile" class="input" type="file" name="csv_file" accept=".csv" style="display:none;">
+          <button class="btn" type="button" id="importCsvBtn">Import CSV</button>
+        </form>
+        <script>
+          (function() {
+            var btn = document.getElementById('importCsvBtn');
+            var file = document.getElementById('importCsvFile');
+            var form = document.getElementById('importCsvForm');
+            if (!btn || !file || !form) return;
+            btn.addEventListener('click', function() { file.click(); });
+            file.addEventListener('change', function() {
+              if (file.files && file.files.length) form.submit();
+            });
+          })();
+        </script>
+      </div>
+      {% if GPS_ENABLED %}
+        <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
+          <a class="btn" href="{{ url_for('admin_export_geojson', type=otype) }}">Export GeoJSON</a>
+          <a class="btn" href="{{ url_for('admin_map', type=otype) }}">Map</a>
+        </div>
+      {% endif %}
+    </div>
+
+    {% include "_pager_controls.html" %}
+
+    {% if view == 'table' %}
+      {% if groups %}
+        {% for gval, grows in groups %}
+          {% if gval %}
+            <h3 style="margin:14px 0 6px 0;">{{ gval }} <span class="meta">({{ grows|length }})</span></h3>
+          {% endif %}
+          {% set table_rows = grows %}
+          {% include "_record_table.html" %}
+        {% endfor %}
+      {% else %}
+        {% include "_record_table.html" %}
+      {% endif %}
+    {% elif view == 'grid' %}
+      {% if groups %}
+        {% for gval, grows in groups %}
+          {% if gval %}
+            <h3 style="margin:14px 0 6px 0;">{{ gval }} <span class="meta">({{ grows|length }})</span></h3>
+          {% endif %}
+          <div class="grid-wrap">
+            {% for r in grows %}
+              {% include "_record_grid.html" %}
+            {% endfor %}
+          </div>
+        {% endfor %}
+      {% else %}
+        <div class="grid-wrap">
+          {% for r in rows %}
+            {% include "_record_grid.html" %}
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% else %}
+      {% if groups %}
+        {% for gval, grows in groups %}
+          {% if gval %}
+            <h3 style="margin:14px 0 6px 0;">{{ gval }} <span class="meta">({{ grows|length }})</span></h3>
+          {% endif %}
+          {% for r in grows %}
+            <div class="card" style="margin-top:12px;">
+              {% set mode = 'view' %}
+              {% set show_recent_edit_btn = True %}
+              {% set edit_form_id = '' %}
+              {% include "_record_card.html" %}
+            </div>
+          {% endfor %}
+        {% endfor %}
+      {% else %}
+        {% for r in rows %}
+          <div class="card" style="margin-top:12px;">
+            {% set mode = 'view' %}
+            {% set show_recent_edit_btn = True %}
+            {% set edit_form_id = '' %}
+            {% include "_record_card.html" %}
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endif %}
+
+  {% endif %}
+</div>

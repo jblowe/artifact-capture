@@ -3,6 +3,10 @@
 {% set thumbs = (r['thumbs_json']|fromjson) if ('thumbs_json' in r.keys() and r['thumbs_json']) else [] %}
 
 <div class="grid-card">
+  <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px;">
+    <div class="mono"><strong>{{ r['id'] }}</strong></div>
+    <a class="btn" style="padding:3px 8px; font-size:12px;" href="{{ url_for('admin_edit', otype=otype, aid=r['id']) }}">Edit</a>
+  </div>
   <div class="grid-images">
     {% if thumbs %}
       {% for t in thumbs %}
